@@ -1,0 +1,21 @@
+.leader.undead {
+  background: linear-gradient(90deg, rgba(40, 12, 48, .94), rgba(9, 20, 28, .72));
+  border-color: #8ee6cf66;
+}
+
+.leader.undead .portrait {
+  border-color: #8ee6cf;
+  background: radial-gradient(circle, #5e286f, #0b1720);
+  box-shadow: 0 0 25px #6fe0bf66;
+}
+
+.leader.undead .bar i { background: linear-gradient(90deg, #582064, #70d5b8); }
+.unit.undead { border-color: #8d5fa4; background: linear-gradient(145deg, #4b2058, #101a21); }
+.card.undead { background: linear-gradient(145deg, #452050, #121923 45%, #090d12); border-color: #9e6eb5; }
+.undead .card-art { background: radial-gradient(circle, #684178aa, #102126); }
+.choice-row { flex-wrap: wrap; }
+.collection-card.undead { border-color: #8f5aa2; background: #16101b; }
+
+@media (max-width: 1200px) {
+  .leader-choice, .opponent-choice { min-width: 165px; }
+}

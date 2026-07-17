@@ -1,0 +1,21 @@
+.leader.storm {
+  background: linear-gradient(90deg, rgba(13, 28, 65, .94), rgba(10, 15, 31, .72));
+  border-color: #74dcff77;
+}
+
+.leader.storm .portrait {
+  border-color: #7fe6ff;
+  background: radial-gradient(circle, #2459a1, #081426);
+  box-shadow: 0 0 28px #56cfff77;
+}
+
+.leader.storm .bar i { background: linear-gradient(90deg, #3752c6, #61dafa); }
+.unit.storm { border-color: #70cffa; background: linear-gradient(145deg, #213d78, #101529); }
+.card.storm { background: linear-gradient(145deg, #223e82, #12172d 45%, #0a0d19); border-color: #73d7ff; }
+.storm .card-art { background: radial-gradient(circle, #53bde0aa, #11152c); }
+.collection-card.storm { border-color: #6bcff0; background: #10182e; }
+.leader-confirm.storm { --leader-accent: #71dcff; background: linear-gradient(140deg, #13295c, #0a0e1c 58%); }
+
+@media (min-width: 1000px) {
+  .builder-setup .leader-choice, .builder-setup .opponent-choice { min-width: 145px; }
+}

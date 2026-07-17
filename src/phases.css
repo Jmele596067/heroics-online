@@ -1,0 +1,52 @@
+.shell { grid-template-rows: 70px 108px 1fr 108px 250px; }
+
+.phase-guide {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d7d4df;
+  font-size: 10px;
+  letter-spacing: .5px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+.phases button:disabled {
+  opacity: .48;
+  cursor: default;
+}
+
+.phases button.active:disabled,
+.phases button.ready:disabled { opacity: 1; }
+
+.enemy-army .unit,
+.leader[data-target] { cursor: crosshair; }
+
+.enemy-army .unit:hover,
+.leader[data-target]:hover,
+.leader.targeted {
+  filter: drop-shadow(0 0 9px rgba(255, 88, 76, .85));
+}
+
+.enemy-army .unit.selected {
+  border-color: #ff6b5e;
+  filter: drop-shadow(0 0 12px rgba(255, 88, 76, .9));
+}
+
+.actions .end {
+  min-width: 112px;
+  border-color: #ffd569;
+  background: linear-gradient(135deg, #8b3c22, #5b2019);
+}
+
+.actions button:disabled { opacity: .4; cursor: wait; }
+
+@media (max-width: 900px) {
+  .shell { grid-template-rows: 65px auto 320px auto 245px; }
+  .phase-guide { text-align: center; padding: 4px 8px; }
+  .controls { align-items: flex-start; height: 62px; gap: 6px; }
+  .phases { gap: 3px; }
+  .phases button { font-size: 7px !important; letter-spacing: 0 !important; }
+  .actions { gap: 3px; flex-wrap: wrap; justify-content: flex-end; }
+  .actions button { padding: 6px !important; }
+}

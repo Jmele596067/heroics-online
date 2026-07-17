@@ -1,0 +1,43 @@
+.online-button { border-color: #77d9ff!important; color: #bcecff!important; box-shadow: inset 0 0 20px rgba(57,183,255,.12); }
+.online-lobby { min-height: 100vh; padding: 24px clamp(18px,5vw,72px); color: #f6f1e7; background: radial-gradient(circle at 75% 10%,rgba(34,150,213,.2),transparent 38%),linear-gradient(145deg,#080c18,#171024 55%,#081724); }
+.online-lobby header { display: flex; align-items: center; gap: 22px; max-width: 1100px; margin: 0 auto 24px; }
+.online-lobby header h1 { margin: 0; font-family: Cinzel,serif; font-size: clamp(28px,4vw,48px); }
+.online-lobby header small { color: #79dfff; letter-spacing: .16em; }
+.online-room { max-width: 1050px; margin: auto; padding: clamp(18px,3vw,34px); border: 1px solid rgba(130,219,255,.3); border-radius: 18px; background: rgba(8,12,25,.88); box-shadow: 0 25px 80px rgba(0,0,0,.55); }
+.online-leader { display: flex; align-items: center; gap: 18px; padding-bottom: 22px; border-bottom: 1px solid rgba(255,255,255,.12); }
+.online-leader img { width: 92px; height: 112px; object-fit: cover; border-radius: 10px; border: 1px solid #d9bd72; }
+.online-leader h2,.online-leader p { margin: 3px 0; }
+.online-leader button { margin-top: 8px; padding: 7px 12px; }
+.room-actions { display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; gap: 20px; margin: 28px 0; }
+.room-actions article { position: relative; padding: 24px; border: 1px solid rgba(255,255,255,.15); border-radius: 14px; background: linear-gradient(145deg,rgba(34,43,70,.8),rgba(13,17,31,.9)); }
+.room-actions article > span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: #07111b; background: #76dcff; font-weight: 900; }
+.room-actions h2 { margin: 12px 0 4px; }
+.room-actions p { min-height: 44px; color: #b8c2d0; font-size: 13px; line-height: 1.45; }
+.room-actions article button,.room-actions input { width: 100%; min-height: 44px; }
+.room-actions input { box-sizing: border-box; margin-bottom: 9px; border: 1px solid rgba(117,220,255,.5); border-radius: 7px; color: white; background: #080d18; text-align: center; font-size: 22px; font-weight: 900; letter-spacing: .22em; text-transform: uppercase; }
+.room-actions > i { align-self: center; color: #708090; font-style: normal; font-weight: 900; }
+.room-code { display: grid; justify-items: center; gap: 8px; padding: 22px; border: 1px solid #6fd8ff; border-radius: 12px; background: rgba(40,166,220,.1); }
+.room-code strong { color: #fff1b7; font-size: clamp(36px,7vw,66px); letter-spacing: .22em; text-shadow: 0 0 25px rgba(255,211,103,.45); }
+.room-code em { color: #96a9bb; }
+.online-message { display: flex; justify-content: center; align-items: center; gap: 10px; min-height: 44px; color: #c8d7e3; }
+.online-message i { width: 16px; height: 16px; border: 2px solid #496a7b; border-top-color: #74dcff; border-radius: 50%; animation: online-spin .8s linear infinite; }
+.reconnect { display: block; margin: 4px auto 18px; border-color: #7bdfff; color: #aeeaff; }
+.online-room footer { color: #788999; text-align: center; font-size: 11px; }
+@keyframes online-spin { to { transform: rotate(360deg); } }
+
+.online-match-bar { position: absolute; z-index: 12; top: 86px; left: 50%; display: flex; align-items: center; gap: 18px; padding: 7px 12px; border: 1px solid rgba(104,218,255,.45); border-radius: 999px; color: #bcecff; background: rgba(4,10,20,.9); transform: translateX(-50%); font-size: 10px; letter-spacing: .08em; }
+.online-match-bar span b { margin-right: 7px; padding: 3px 6px; border-radius: 99px; color: #07131c; background: #71dcff; }
+.online-match-bar strong { color: #fff1ba; }
+.online-match-bar button { padding: 4px 8px; border-color: rgba(255,116,116,.5); color: #ffb6b6; font-size: 9px; }
+.reconnect-overlay { position: absolute; z-index: 40; inset: 0; display: grid; place-items: center; background: rgba(4,7,14,.72); backdrop-filter: blur(4px); }
+.reconnect-overlay > div { max-width: 380px; padding: 30px; border: 1px solid rgba(117,220,255,.5); border-radius: 16px; background: #0c1322; text-align: center; box-shadow: 0 25px 80px #000; }
+.reconnect-overlay i { color: #75dcff; font-size: 42px; }
+
+@media (max-width: 700px) {
+  .online-lobby { padding: 14px; }
+  .room-actions { grid-template-columns: 1fr; }
+  .room-actions > i { justify-self: center; }
+  .online-leader { align-items: flex-start; }
+  .online-match-bar { top: 78px; max-width: 92vw; white-space: nowrap; }
+  .online-match-bar strong { display: none; }
+}
