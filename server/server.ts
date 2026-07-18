@@ -3,8 +3,8 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
-import { HeroicsGame, type Phase } from '../src/game';
-import { cardById, type Element } from '../src/cards';
+import { HeroicsGame, type Phase, type PlayCardChoices } from '../src/game';
+import { cardAllowedForLeader, cardById, type Element } from '../src/cards';
 
 type Seat='host'|'guest';
 type DeckChoice={leader:Element;cards:string[]};
@@ -41,7 +41,10 @@ const roomCode=()=>{let code='';do code=randomBytes(4).toString('hex').slice(0,5
 function validDeck(value:unknown):value is DeckChoice{
   if(!value||typeof value!=='object')return false;
   const deck=value as DeckChoice;
-  return elements.has(deck.leader)&&Array.isArray(deck.cards)&&deck.cards.length===20&&deck.cards.every(id=>typeof id==='string'&&cardById(id)?.element===deck.leader);
+  return elements.has(deck.leader)&&Array.isArray(deck.cards)&&deck.cards.length===20&&deck.cards.every(id=>{
+    const card=typeof id==='string'?cardById(id):undefined;
+    return Boolean(card&&cardAllowedForLeader(card,deck.leader));
+  });
 }
 
 function slot(room:Room,seat:Seat){return seat==='host'?room.host:room.guest!}
@@ -84,7 +87,7 @@ function perform(room:Room,seat:Seat,action:string,payload:Record<string,unknown
   const game=room.game!;const guest=seat==='guest';if(guest)swapPerspective(game);
   game.state.phase=room.phase;game.state.winner=null;
   try{
-    if(action==='playCard'&&typeof payload.uid==='string')game.playCard(payload.uid);
+    if(action==='playCard'&&typeof payload.uid==='string')game.playCard(payload.uid,(payload.choices??{}) as PlayCardChoices);
     else if(action==='selectUnit'&&typeof payload.uid==='string')game.selectUnit(payload.uid);
     else if(action==='selectTarget'&&typeof payload.uid==='string')game.selectTarget(payload.uid);
     else if(action==='nextPhase')game.nextPhase();
@@ -92,6 +95,7 @@ function perform(room:Room,seat:Seat,action:string,payload:Record<string,unknown
     else if(action==='advance')game.advance();
     else if(action==='attack')game.attack();
     else if(action==='leaderAbility')game.leaderAbility(payload.choice==='heal'?'heal':payload.choice==='push'?'push':'damage');
+    else if(action==='unitAbility'&&typeof payload.uid==='string')game.unitAbility(payload.uid);
     else if(action==='dischargeCore')game.dischargeCore();
     else if(action==='absorbMagic')game.absorbMagic();
   }finally{if(guest)swapPerspective(game)}

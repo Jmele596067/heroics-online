@@ -1,5 +1,5 @@
 import type { CardDef } from './cards';
-import type { GameState, Player, Unit } from './game';
+import type { GameState, PlayCardChoices, Player, Unit } from './game';
 import { nextForm } from './evolution';
 import type { DeckConfig } from './deck';
 
@@ -13,7 +13,7 @@ export interface GameController {
   canEvolve(player:Player):boolean;
   evolutionProgress(player:Player):string;
   sameZone(attacker:Unit,target:Unit):boolean;
-  playCard(uid:string):void;
+  playCard(uid:string,choices?:PlayCardChoices):void;
   selectUnit(uid:string):void;
   selectTarget(uid:string):void;
   nextPhase():void;
@@ -21,6 +21,7 @@ export interface GameController {
   advance():void;
   attack():void;
   leaderAbility(choice?:'damage'|'heal'|'push'):void;
+  unitAbility(uid:string):void;
   dischargeCore():void;
   absorbMagic():void;
   restart():void;
@@ -63,11 +64,16 @@ export class OnlineGameClient implements GameController {
   surrender(){this.send({type:'surrender'})}
   subscribe(listener:Listener){this.listeners.push(listener);if(this.state)listener(this.state)}
   private action(action:string,payload:Record<string,unknown>={}){this.send({type:'action',action,payload})}
-  effectiveCost(player:Player,card:CardDef){return player.element==='storm'&&player.evolutionStage>=3&&card.kind==='magic'?Math.max(1,card.cost-1):card.cost}
+  effectiveCost(player:Player,card:CardDef){
+    let cost=card.cost;
+    if(player.element==='storm'&&player.evolutionStage>=3&&card.kind==='magic')cost=Math.max(1,cost-1);
+    if(player.activeZone?.zone==='volcano'&&card.kind==='magic'&&card.traits?.includes('Fire')&&!player.zoneSpellDiscountUsed)cost=Math.max(0,cost-1);
+    return cost;
+  }
   canEvolve(player:Player){const next=nextForm(player.element,player.evolutionStage);if(!next)return false;if(player.element!=='storm')return player.glory>=next.gloryRequired;if(player.evolutionStage===0)return player.magicCastTotal>=2;if(player.evolutionStage===1)return player.damageLastTurn>=6;return player.stormCharges>=3||player.tempestMagicCast}
   evolutionProgress(player:Player){if(player.element!=='storm'){const next=nextForm(player.element,player.evolutionStage);return next?`${player.glory} / ${next.gloryRequired} Glory`:'Maximum evolution'}if(player.evolutionStage===0)return `${Math.min(2,player.magicCastTotal)} / 2 Magic cards cast`;if(player.evolutionStage===1)return `${Math.min(6,player.damageLastTurn)} / 6 damage last turn`;if(player.evolutionStage===2)return `${player.stormCharges} / 3 Storm Charges • or cast Tempest Magic`;return 'Maximum evolution'}
   sameZone(attacker:Unit,target:Unit){return attacker.position+target.position===2}
-  playCard(uid:string){this.action('playCard',{uid})}
+  playCard(uid:string,choices:PlayCardChoices={}){this.action('playCard',{uid,choices})}
   selectUnit(uid:string){this.action('selectUnit',{uid})}
   selectTarget(uid:string){this.action('selectTarget',{uid})}
   nextPhase(){this.action('nextPhase')}
@@ -75,6 +81,7 @@ export class OnlineGameClient implements GameController {
   advance(){this.action('advance')}
   attack(){this.action('attack')}
   leaderAbility(choice:'damage'|'heal'|'push'='damage'){this.action('leaderAbility',{choice})}
+  unitAbility(uid:string){this.action('unitAbility',{uid})}
   dischargeCore(){this.action('dischargeCore')}
   absorbMagic(){this.action('absorbMagic')}
   restart(){this.send({type:'rematch'})}

@@ -1,6 +1,6 @@
 # Heroics: Clash of Leaders
 
-A Phaser + TypeScript browser card-game prototype featuring battlefield movement, Essence, Leader abilities, AI, online friend rooms, and four-stage Leader evolution.
+A Phaser + TypeScript browser card-game prototype featuring three battlefield Zones, Gate summoning, Essence, Leader and Unit abilities, AI, online friend rooms, and four-stage Leader evolution.
 
 Heroics is an active beta for private testing with friends. It is not a finished or production-ready game.
 
@@ -59,6 +59,7 @@ If the frontend and match server are hosted separately, build the frontend with 
 - Clicking a Leader opens an information screen with Health, ability, evolution rules, strategy, signature cards, and a confirmation button. Your saved deck changes only after confirmation.
 - Choose the Fire, Water, Queen of the Dead, or Tempestfang deck as the AI opponent.
 - Click any card to see its artwork, Essence cost, statistics, and effect.
+- Neutral Zone cards can be included in every Leader deck. Zone cards keep names such as **Desert Gate** and **Ocean Gate**.
 - Add up to 3 copies of a card and build an exact 20-card deck.
 - The deck count and complete deck list update immediately.
 - Your Leader, opponent, and deck are saved automatically in browser storage.
@@ -76,7 +77,9 @@ Ignis and Shellgon progress through four forms:
 
 Enter the Evolution Phase after reaching the next requirement. Review the next form and choose **Begin Evolution**. Evolution grants permanent statistics, a stronger Leader ability, a new portrait, and a form-specific effect.
 
-The Queen of the Dead starts at 30 Health and evolves at 3, 7, and 12 Glory into Grave Regent, Lich Empress, and Sovereign of Endless Night. Her once-per-turn **Raise Skeleton** ability summons a 1 Attack / 2 Health Skeleton token; later forms summon ready or additional Skeletons. Her deck also revolves around Unit search chains, the graveyard, resurrection, kill-triggered healing, Gatekeeper bonuses, and Unit-targeted Equipment. During Deploy, select a friendly Unit before playing **Soul Harvest** or an Undead Equipment card. **Raise the Fallen** returns the two most recently defeated Units available in your graveyard.
+The Queen of the Dead starts at 30 Health and evolves at 3, 7, and 12 Glory into Grave Regent, Lich Empress, and Sovereign of Endless Night. Her once-per-turn **Raise Skeleton** ability summons a 1 Attack / 2 Health Skeleton token; later forms summon ready or additional Skeletons.
+
+Her expanded Undead deck includes Grave Banshee, Queen’s Guardsman, The Forsaken Prince, Skeleton Bone Parlor, the revised Cemetery Reaper, seven Magic cards, and three Equipment cards. Undead Wizard deploys Gravebound Knight directly when an open Gate is available; the Knight then searches Forever Dead King into hand. **Raise the Fallen** now deploys up to two chosen Units directly from the graveyard. **Cemetery Gate** gives Undead Units +3 Attack/+3 Health and stores defeated Undead cards in the public Cemetery pile instead of the graveyard.
 
 ## Tempestfang and the Storm deck
 
@@ -88,19 +91,34 @@ Tempestfang uses condition-based evolution instead of Glory:
 
 Storm abilities are once per turn and can target a selected enemy Unit or default to the rival Leader. Select a friendly Unit before casting healing, Wind Step, or Unit Equipment cards. In this lane adaptation, **Speed +1** readies a Unit for movement, “blocking” means being the defending Unit in combat, and Tempest Magic chooses damage plus push when an enemy Unit is selected or damage plus Rainfield when targeting the rival Leader. Storm-Devourer unlocks all three Eye of the Storm choices and may automatically absorb the lowest-cost Magic card in hand for Storm Blast.
 
+## Zone and Gate battlefield
+
+- The old Field-card classification is now **Zone**.
+- Card names still use **Gate**, such as Desert Gate, Ocean Gate, and Volcano Gate.
+- The shared battlefield has three physical Zones: your Gate Zone, the Center Gate Zone, and the enemy Gate Zone.
+- Every physical Zone contains three Gate slots for each player, so each player may control up to three Units in that Zone.
+- Units are summoned into open slots at their home Gate Zone.
+- A Unit cannot move to the next Zone while an enemy Unit remains in its current physical Zone.
+- Units can only battle enemy Units occupying the same physical Zone.
+- Each player can have only one active Zone card. Playing a new Zone sends the previous Zone to the graveyard.
+
+The neutral Zone set contains Desert Gate, Ocean Gate, Volcano Gate, Field Gate, Lightning Plains Gate, Fog Marsh Gate, Frost Peaks Gate, Shadow Ruins Gate, and Cemetery Gate. Standard Zones cost 2 Essence; Cemetery Gate costs 3 because its +3/+3 Undead bonus and Cemetery replacement effect are substantially stronger.
+
 ## Turn structure
 
 Each turn follows one locked sequence:
 
-1. **Deploy Phase** — play cards using Essence.
+1. **Deploy Phase** — summon Units, play Equipment, and activate a Zone using Essence.
 2. **Evolution Phase** — transform when the Glory requirement is met.
 3. **Advance Phase** — move ready units toward the enemy gate.
 4. **Battle Phase** — select an attacker and an enemy occupying the same physical zone. A Unit can strike the rival Leader only after reaching the enemy Gate.
 5. **End Turn** — the rival completes the same turn sequence.
 
-Use **End Phase** to move forward. Earlier phases cannot be reopened during the same turn, and **End Turn** appears only during Battle Phase.
+Use **End Phase** to move forward. Earlier phases cannot be reopened during the same turn, and **End Turn** appears only during Battle Phase. Magic cards, Leader abilities, and activated Unit abilities remain usable throughout all four phases of your turn. Ignis, Shellgon, the Queen, and Tempestfang share the same once-per-turn Leader-ability lock.
 
-Battlefield Units display their card artwork. Click a card in your hand to open its full artwork, cost, statistics, and rules in the side inspector, then press **Play Card** to commit it.
+Battlefield Units display their card artwork. Click a card in your hand to open its full artwork, cost, statistics, and rules in the side inspector, then press **Play Card** to commit it. Choice-based Queen cards open a server-validated target picker.
+
+Click either Leader during a match to view current Health, Attack, Defense, evolution stage, ability, passive, Equipment, statuses, and the complete evolution ability list. Click the Grave count to open the public Graveyard/Cemetery viewer; cards are sorted by type and individually inspectable. Active Zone cards and battlefield Units are also clickable for full rules and status details.
 
 ## Test-play and optimization loop
 
@@ -108,7 +126,7 @@ Battlefield Units display their card artwork. Click a card in your hand to open 
 npm run optimize
 ```
 
-The loop performs rule assertions, simulates 200 complete matches, reports win rates, stalls, match length, and ultimate-form frequency, produces a balance recommendation, and then creates a production build.
+The loop performs Zone-capacity, movement-blocking, same-Zone combat, all-turn Magic, once-per-turn ability, Zone-effect, expanded Queen-card, and evolution assertions. It then simulates 200 complete matches, reports win rates, stalls, match length, and ultimate-form frequency, and creates a production build.
 
 It also starts a temporary two-player server and verifies room creation, hidden opponent information, synchronized turns, out-of-turn rejection, disconnect/reconnect, and surrender outcomes.
 
