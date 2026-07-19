@@ -1,10 +1,10 @@
 import { Element, starterDeckIds } from './cards';
 
-export const DECK_SIZE=20;
+export const DECK_SIZE=40;
 export const MAX_COPIES=3;
 export interface DeckConfig { leader:Element; opponent:Element; cards:string[] }
 
-const STORAGE_KEY='heroics-deck-v1';
+const STORAGE_KEY='heroics-deck-v2-40';
 export const defaultDeckConfig=():DeckConfig=>({leader:'flame',opponent:'tide',cards:starterDeckIds('flame')});
 
 export function loadDeckConfig():DeckConfig{

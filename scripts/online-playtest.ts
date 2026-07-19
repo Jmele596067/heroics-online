@@ -23,18 +23,22 @@ async function waitForServer(){for(let i=0;i<40;i++){try{if((await fetch(`http:/
 
 try{
   await waitForServer();
-  const host=await connect();host.send({type:'create',deck:{leader:'flame',cards:starterDeckIds('flame')}});
+  const mixedHostDeck=[...starterDeckIds('flame')];mixedHostDeck[0]='kraken';
+  const host=await connect();host.send({type:'create',deck:{leader:'flame',cards:mixedHostDeck}});
   const created=await host.type('room-created');assert.match(created.roomCode,/^[A-F0-9]{5}$/,'server creates a shareable five-character room code');
   const guest=await connect();guest.send({type:'join',roomCode:created.roomCode,deck:{leader:'storm',cards:starterDeckIds('storm')}});
   const joined=await guest.type('room-joined');const hostStart=await host.type('state');const guestStart=await guest.type('state');
   assert.equal(hostStart.state.player.element,'flame','host receives their own deck perspective');
+  assert.ok([...hostStart.state.player.hand,...hostStart.state.player.deck].some((card:any)=>card.id==='kraken'),'server accepts a cross-attribute card in any Leader deck');
   assert.equal(guestStart.state.player.element,'storm','guest receives their own deck perspective');
   assert.equal(hostStart.state.enemy.hand.length,0,'opponent hand contents stay private');
   assert.equal(guestStart.state.enemy.deck.length,0,'opponent deck order stays private');
   assert.equal(hostStart.state.phase,'deploy','host takes the opening turn');
   assert.equal(guestStart.state.phase,'enemy','guest waits during the host turn');
+  assert.equal(hostStart.state.tiles.length,3,'online matches begin with the same three-hex map');
+  host.send({type:'action',action:'selectTile',payload:{position:1}});const selectedHost=await host.type('state');await guest.type('state');assert.equal(selectedHost.state.selectedTile,1,'selected movement and placement hexes synchronize');
 
-  for(let i=0;i<3;i++){host.send({type:'action',action:'nextPhase'});await host.type('state');await guest.type('state')}
+  host.send({type:'action',action:'nextPhase'});await host.type('state');await guest.type('state');
   host.send({type:'action',action:'nextPhase'});const hostWait=await host.type('state');const guestTurn=await guest.type('state');
   assert.equal(hostWait.state.phase,'enemy','host waits after ending the turn');
   assert.equal(guestTurn.state.phase,'deploy','guest receives the next synchronized turn');

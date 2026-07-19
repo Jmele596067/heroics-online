@@ -1,216 +1,127 @@
 import assert from 'node:assert/strict';
-import { HeroicsGame, Unit, ZONE_CAPACITY } from '../src/game';
-import { currentForm, EVOLUTIONS } from '../src/evolution';
-import { CardDef, Element, cardById, cardPool, starterDeckIds, zoneCards } from '../src/cards';
+import { BLOCKED_GATE_COORDINATES, FIXED_ZONE_COORDINATES, HeroicsGame, Unit, ZONE_CAPACITY } from '../src/game';
+import { EVOLUTIONS } from '../src/evolution';
+import { CardDef, Element, allCards, cardAllowedForLeader, cardById, makeCustomDeck, starterDeckIds, zoneCards } from '../src/cards';
+import { DECK_SIZE } from '../src/deck';
 
-interface MatchResult { winner:string; turns:number; playerStage:number; enemyStage:number }
-const targeted=new Set(['thorned-rose-crown','crown-eternal-night','blade-forgotten-kings','gale-step-invocation','healing-downpour','stormforged-talons','gale-mantle-cloak','raincaller-totem']);
 const card=(id:string,uid=id)=>({...cardById(id)!,uid});
 const unit=(overrides:Partial<Unit>={}):Unit=>({uid:'unit',cardId:'ember-squire',name:'Test Unit',attack:2,health:3,maxHealth:3,position:0,exhausted:false,element:'flame',traits:['Fire'],equipment:[],summonedTurn:1,attacksThisTurn:0,...overrides});
+const targeted=new Set(['coral-plate','thorned-rose-crown','crown-eternal-night','blade-forgotten-kings','gale-step-invocation','healing-downpour','stormforged-talons','gale-mantle-cloak','raincaller-totem']);
 
-function playPlayerTurn(game:HeroicsGame) {
+function playPlayerTurn(game:HeroicsGame){
   const s=game.state;if(s.winner)return;
-  if(s.phase!=='deploy')throw new Error(`Player turn must begin in Deploy Phase, received ${s.phase}`);
-  let changed=true,safety=0;
-  while(changed&&safety++<30){
-    changed=false;
-    const abilityReserve=s.player.element!=='storm'&&s.player.element!=='undead'&&!s.player.leaderAbilityUsed&&currentForm(s.player.element,s.player.evolutionStage).abilityDamage>0&&s.player.essence>=2?2:0;
-    const playable=[...s.player.hand]
-      .filter(c=>(game.effectiveCost(s.player,c)<=s.player.essence-abilityReserve)
-        &&(c.kind!=='unit'||game.gateSlotsOpen(s.player)>0)
-        &&(!targeted.has(c.id)||s.player.units.length>0)
-        &&(c.id!=='soul-harvest'||s.player.units.some(u=>u.health<=2&&u.traits.includes('Undead')))
-        &&(c.id!=='death-mist'||s.enemy.units.length>0)
-        &&(c.id!=='raise-the-fallen'||s.player.graveyard.some(candidate=>candidate.kind==='unit'))
-        &&(c.id!=='endless-grave'||s.player.units.length>0)
-        &&(c.id!=='queens-destruction'||s.player.units.length>0&&s.enemy.units.length>0)
-        &&(c.id!=='ultimate-sacrifice'||s.player.hand.some(candidate=>candidate.uid!==c.uid&&candidate.kind==='unit'))
-        &&(c.id!=='for-the-queen'||game.gateSlotsOpen(s.player)>0&&s.player.deck.some(candidate=>candidate.kind==='unit'&&candidate.id!=='forever-dead-king')))
-      .sort((a,b)=>game.effectiveCost(s.player,b)-game.effectiveCost(s.player,a))[0];
-    if(playable){
-      if(playable.id==='soul-harvest')game.selectUnit(s.player.units.find(u=>u.health<=2&&u.traits.includes('Undead'))!.uid);
-      else if(targeted.has(playable.id))game.selectUnit(s.player.units[0].uid);
-      const before=s.player.hand.length;game.playCard(playable.uid);changed=s.player.hand.length!==before;
-    }
+  for(const c of [...s.player.hand].sort((a,b)=>b.cost-a.cost)){
+    if(game.effectiveCost(s.player,c)>s.player.essence)continue;
+    if(c.kind==='unit'&&game.gateSlotsOpen(s.player)<=0)continue;
+    if(targeted.has(c.id)&&!s.player.units.length)continue;
+    if(targeted.has(c.id))game.selectUnit(s.player.units[0].uid);
+    game.playCard(c.uid);
   }
-
-  if(s.player.element==='undead'||s.player.element==='storm'||s.player.essence>=2)game.leaderAbility();
-  game.nextPhase();while(game.canEvolve(s.player))game.evolveLeader();
+  if(game.canEvolve(s.player))game.evolveLeader();
   game.nextPhase();
+  if(s.player.element==='flame')game.leaderAbility('damage');
+  if(s.player.element==='tide'&&s.player.units.length){game.selectUnit(s.player.units[0].uid);game.leaderAbility('heal')}
+  if(s.player.element==='undead')game.leaderAbility();
+  if(s.player.element==='storm')game.leaderAbility('damage');
   for(const actor of [...s.player.units]){
-    if(!actor.exhausted&&!s.enemy.units.some(enemy=>game.sameZone(actor,enemy))){game.selectUnit(actor.uid);game.advance()}
+    if(actor.exhausted)continue;
+    const target=s.enemy.units.find(enemy=>game.sameZone(actor,enemy));
+    game.selectUnit(actor.uid);
+    if(target){game.selectTarget(target.uid);game.attack()}
+    else if(actor.position<2){game.selectTile(actor.position===0?s.player.homeTileId===0?1:1:2-s.player.homeTileId);game.advance()}
+    else game.attack();
   }
-  game.nextPhase();
-  for(const actor of [...s.player.units]){
-    if(!actor.exhausted){game.selectUnit(actor.uid);game.attack();if(actor.cardId==='forsaken-prince'&&!actor.exhausted){game.selectUnit(actor.uid);game.attack()}}
-  }
+  game.leaderAttack();
   game.endTurn();
 }
 
-function simulateMatch(maxTurns=100,playerElement:Element='flame',enemyElement:Element='tide'):MatchResult {
+function simulate(maxTurns=100,playerElement:Element='flame',enemyElement:Element='tide'){
   const game=new HeroicsGame(true,{playerElement,enemyElement});
   while(!game.state.winner&&game.state.turn<=maxTurns)playPlayerTurn(game);
-  return {winner:game.state.winner??'stall',turns:game.state.turn,playerStage:game.state.player.evolutionStage,enemyStage:game.state.enemy.evolutionStage};
+  return {winner:game.state.winner??'stall',turns:game.state.turn};
 }
 
-function addToHand(game:HeroicsGame,id:string,uid=id){const p=game.state.player;p.hand.push(card(id,uid));p.essence=30;return p.hand[p.hand.length-1]}
+function rules(){
+  assert.equal(DECK_SIZE,40);
+  assert.equal(starterDeckIds('flame').length,40);
+  assert.ok(allCards.every(card=>(['flame','tide','undead','storm'] as Element[]).every(leader=>cardAllowedForLeader(card,leader))),'every Leader can use every card');
+  const universalIds=[...starterDeckIds('flame')];universalIds[0]='kraken';assert.ok(makeCustomDeck(universalIds,'flame').some(card=>card.id==='kraken'),'mixed-attribute custom decks are preserved');
+  assert.equal(ZONE_CAPACITY,3);
+  assert.equal(zoneCards.length,11);
+  assert.ok(Object.values(EVOLUTIONS).every(forms=>forms.length===4));
 
-function ruleTests(){
-  const game=new HeroicsGame(true),p=game.state.player;
-  assert.equal(game.state.phase,'deploy','match starts in Deploy Phase');
-  assert.equal(p.hand.length,5,'player draws five cards');
-  assert.equal(game.state.enemy.hand.length,5,'AI draws five cards');
-  assert.equal(ZONE_CAPACITY,3,'every battlefield Zone has three Gate slots per player');
-  assert.equal(zoneCards.length,9,'all nine Gate-named Zone cards exist');
-  assert.ok(zoneCards.every(zone=>zone.kind==='zone'&&zone.name.endsWith('Gate')),'Field cards are classified as Zones while retaining Gate names');
-  assert.equal(EVOLUTIONS.flame.length,4,'Ignis has four forms');
-  assert.equal(EVOLUTIONS.tide.length,4,'Shellgon has four forms');
-  assert.equal(EVOLUTIONS.undead.length,4,'Queen has four forms');
-  assert.equal(EVOLUTIONS.storm.length,4,'Tempestfang has four forms');
+  const phases=new HeroicsGame(true);assert.equal(phases.state.phase,'deploy');phases.nextPhase();assert.equal(phases.state.phase,'battle');
+  const late=card('firebolt','late');phases.state.player.hand=[late];phases.state.player.essence=5;const before=phases.state.enemy.health;phases.playCard('late');assert.equal(phases.state.enemy.health,before-3,'Magic is usable in Battle');
 
-  p.essence=20;const originalEnemyHealth=game.state.enemy.health;
-  game.leaderAbility();const afterFirst=game.state.enemy.health;game.leaderAbility();
-  assert.ok(afterFirst<originalEnemyHealth,'Ignis can use Solar Slash');
-  assert.equal(game.state.enemy.health,afterFirst,'Ignis cannot use his ability twice in one turn');
-  assert.equal(p.leaderAbilityUsed,true,'Ignis records the once-per-turn ability use');
+  const combat=new HeroicsGame(true);const attacker=unit({uid:'attacker',position:1,attack:3}),defender=unit({uid:'defender',position:1,attack:9,health:8,maxHealth:8});combat.state.player.units=[attacker];combat.state.enemy.units=[defender];combat.nextPhase();combat.selectUnit(attacker.uid);combat.beginAttack();assert.equal(combat.state.attackMode,'unit');combat.selectTarget(defender.uid);combat.attack();assert.equal(defender.health,5);assert.equal(attacker.health,3,'attacks never counterattack');
 
-  addToHand(game,'firebolt','late-firebolt');game.nextPhase();game.nextPhase();
-  const healthBeforeMagic=game.state.enemy.health;game.playCard('late-firebolt');
-  assert.equal(game.state.enemy.health,healthBeforeMagic-3,'Magic cards can be cast during Advance Phase');
+  const cancel=new HeroicsGame(true);cancel.state.player.units=[unit({uid:'cancel-unit'})];cancel.nextPhase();cancel.selectUnit('cancel-unit');cancel.beginAttack();cancel.cancelAttack();assert.equal(cancel.state.attackMode,null);assert.equal(cancel.state.phase,'battle');
 
-  const gateGame=new HeroicsGame(true);
-  const gp=gateGame.state.player;gp.essence=30;gp.hand=[card('ember-squire','g1'),card('ember-squire','g2'),card('ember-squire','g3'),card('ember-squire','g4')];
-  gateGame.playCard('g1');gateGame.playCard('g2');gateGame.playCard('g3');gateGame.playCard('g4');
-  assert.equal(gp.units.length,3,'a Zone cannot hold more than three friendly Units');
-  assert.ok(gp.hand.some(c=>c.uid==='g4'),'a fourth summon remains in hand when all home Gates are occupied');
+  const contested=new HeroicsGame(true);const blocked=unit({uid:'blocked'});contested.state.player.units=[blocked];contested.state.enemy.units=[unit({uid:'blocker',position:2})];contested.nextPhase();contested.selectUnit(blocked.uid);contested.selectTile(1);contested.advance();assert.equal(blocked.position,0);blocked.traits.push('Sneak');blocked.exhausted=false;contested.advance();assert.equal(blocked.position,1,'Sneak passes a contested tile');
 
-  gp.units.forEach(u=>u.exhausted=false);gateGame.nextPhase();gateGame.nextPhase();
-  gateGame.state.enemy.units=[unit({uid:'blocker',cardId:'pearl-scout',element:'tide',traits:['Water'],position:2})];
-  const blocked=gp.units[0];gateGame.selectUnit(blocked.uid);gateGame.advance();
-  assert.equal(blocked.position,0,'enemy Units in the current Zone block movement to the next Zone');
-  gateGame.state.enemy.units=[];gateGame.advance();
-  assert.equal(blocked.position,1,'a Unit can advance after its current Zone is cleared');
-  gp.essence=30;gateGame.state.phase='deploy';gateGame.playCard('g4');
-  assert.equal(gp.units.length,4,'moving a Unit opens a home Gate for another summon');
-  assert.equal(gp.units.filter(u=>u.position===0).length,3,'the home Zone still respects its three-Gate limit');
+  const zones=new HeroicsGame(true);zones.state.player.essence=10;zones.state.player.hand=[card('desert-gate','desert'),card('ocean-gate','ocean')];zones.beginZonePlacement('desert');const first=zones.availableZonePlacements(0)[0];zones.placeZone(first.q,first.r,0);assert.equal(zones.state.tiles.length,4);const desertTile=zones.state.tiles.find(tile=>tile.zoneCard?.id==='desert-gate')!;zones.selectTile(desertTile.id);zones.beginZonePlacement('ocean');const second=zones.availableZonePlacements(desertTile.id)[0];zones.placeZone(second.q,second.r,desertTile.id);assert.equal(zones.state.tiles.length,5);assert.ok(zones.areAdjacent(desertTile.id,zones.state.tiles.find(tile=>tile.zoneCard?.id==='ocean-gate')!.id));
+  const explorer=unit({uid:'explorer',exhausted:false});zones.state.player.units=[explorer];zones.nextPhase();zones.selectUnit('explorer');zones.selectTile(desertTile.id);zones.advance();assert.equal(explorer.position,desertTile.id,'a unit can enter a newly created Zone during the same turn');
+  const fullMap=new HeroicsGame(true);fullMap.state.player.essence=99;fullMap.state.player.hand=['desert-gate','ocean-gate','volcano-gate','field-gate','fog-marsh-gate'].map((id,i)=>card(id,`zone-${i}`));for(let i=0;i<4;i++){const uid=`zone-${i}`;fullMap.beginZonePlacement(uid);const anchor=fullMap.state.selectedTile??0,place=fullMap.availableZonePlacements(anchor)[0]??fullMap.availableZonePlacements(0)[0];fullMap.placeZone(place.q,place.r,place.anchorId)}assert.equal(fullMap.state.tiles.length,7,'the field grows from 3 to a maximum of 7 tiles');fullMap.beginZonePlacement('zone-4');assert.equal(fullMap.state.pendingZoneUid,null,'an eighth field tile cannot be started');
 
-  const combat=new HeroicsGame(true);
-  const attacker=unit({uid:'attacker',position:1}),wrong=unit({uid:'wrong',cardId:'pearl-scout',element:'tide',traits:['Water'],position:0}),local=unit({uid:'local',cardId:'pearl-scout',element:'tide',traits:['Water'],position:1});
-  combat.state.player.units=[attacker];combat.state.enemy.units=[wrong,local];combat.nextPhase();combat.nextPhase();combat.nextPhase();
-  combat.selectUnit(attacker.uid);combat.selectTarget(wrong.uid);combat.attack();assert.equal(wrong.health,3,'Units cannot battle across Zones');
-  combat.selectTarget(wrong.uid);combat.selectTarget(local.uid);combat.attack();assert.equal(local.health,1,'Units can battle in the same physical Zone');
+  const ignis=new HeroicsGame(true);ignis.nextPhase();const enemyBefore=ignis.state.enemy.health;ignis.leaderAbility('damage');ignis.leaderAbility('damage');assert.equal(ignis.state.enemy.health,enemyBefore-5);assert.equal(ignis.state.player.abilityPoints,0);
+  ignis.state.player.glory=15;ignis.evolveLeader();assert.equal(ignis.state.player.maxHealth,36);assert.equal(ignis.state.player.maxAbilityPoints,3);const stage=ignis.state.player.evolutionStage;ignis.evolveLeader();assert.equal(ignis.state.player.evolutionStage,stage,'evolution is once per turn');
 
-  const zones=new HeroicsGame(true,{playerElement:'storm',enemyElement:'flame'}),zp=zones.state.player;
-  zp.essence=30;zp.hand=[card('desert-gate','desert'),card('skyclaw-raptor','beast')];zones.playCard('desert');zones.playCard('beast');
-  assert.equal(zp.units[0].maxHealth,6,'Desert Gate grants Beast units +5 Health');
-  zp.hand.push(card('volcano-gate','volcano'));zones.playCard('volcano');
-  assert.equal(zp.units[0].maxHealth,1,'replacing Desert Gate removes its continuous Health bonus');
-  assert.ok(zp.graveyard.some(c=>c.id==='desert-gate'),'the replaced Zone enters the graveyard');
+  const shellgon=new HeroicsGame(true,{playerElement:'tide',enemyElement:'flame'});shellgon.state.player.units=[unit({uid:'patient',element:'tide',health:1,maxHealth:10})];shellgon.nextPhase();shellgon.selectUnit('patient');shellgon.leaderAbility('heal');assert.equal(shellgon.state.player.units[0].health,4);assert.equal(shellgon.state.player.abilityPoints,0);
 
-  const desertTurn=new HeroicsGame(true,{playerElement:'flame',enemyElement:'tide'},true),dp=desertTurn.state.player;dp.essence=30;dp.hand=[card('desert-gate','desert-start')];desertTurn.playCard('desert-start');dp.maxEssence=2;desertTurn.beginOnlineTurn();
-  assert.equal(dp.essence,4,'Desert Gate grants 1 bonus Essence at turn start when no Water Unit is controlled');
+  const pearl=new HeroicsGame(true,{playerElement:'tide',enemyElement:'flame'});pearl.state.player.essence=10;pearl.state.player.hand=[card('pearl-scout','pearl')];pearl.state.player.deck=[card('mending-tide','mending')];pearl.playCard('pearl');assert.ok(pearl.state.player.hand.some(c=>c.id==='mending-tide'));
+  const fire=new HeroicsGame(true);fire.state.player.essence=10;fire.state.player.hand=[card('ember-squire','ember')];fire.state.player.deck=[card('sunblade','blade')];fire.playCard('ember');assert.ok(fire.state.player.hand.some(c=>c.id==='sunblade'));
 
-  const ocean=new HeroicsGame(true,{playerElement:'tide',enemyElement:'flame'}),op=ocean.state.player;op.essence=30;op.hand=[card('ocean-gate','ocean'),card('pearl-scout','water-unit')];ocean.playCard('ocean');ocean.playCard('water-unit');
-  assert.equal(op.units[0].maxHealth,4,'Ocean Gate gives Water Units +1 Health');op.health=20;op.hand.push(card('coral-plate','ocean-heal'));ocean.playCard('ocean-heal');assert.equal(op.health,25,'Ocean Gate adds 1 to healing effects');
+  const block=new HeroicsGame(true);const striker=unit({uid:'striker',position:1,attack:4}),protectedUnit=unit({uid:'protected',position:1,health:6,maxHealth:6}),coral=unit({uid:'coral',cardId:'coral-defender',name:'Coral Defender',position:1,element:'tide',traits:['Water','Defender','Block'],health:10,maxHealth:10});block.state.player.units=[striker];block.state.enemy.units=[protectedUnit,coral];block.nextPhase();block.selectUnit('striker');block.selectTarget('protected');block.attack();assert.equal(protectedUnit.health,6);assert.equal(coral.health,6,'Coral Defender redirects the attack');
 
-  const volcano=new HeroicsGame(true,{playerElement:'flame',enemyElement:'tide'}),vp=volcano.state.player;vp.essence=30;vp.hand=[card('volcano-gate','volcano-zone'),card('ember-squire','fire-unit'),card('firebolt','fire-one'),card('firebolt','fire-two')];volcano.playCard('volcano-zone');volcano.playCard('fire-unit');
-  assert.equal(vp.units[0].attack,3,'Volcano Gate gives Fire Units +1 Power');assert.equal(volcano.effectiveCost(vp,vp.hand.find(c=>c.uid==='fire-one')!),1,'the first Fire Magic card costs 1 less');volcano.playCard('fire-one');assert.equal(volcano.effectiveCost(vp,vp.hand.find(c=>c.uid==='fire-two')!),2,'only the first Fire Magic card receives the discount');
+  const riptide=new HeroicsGame(true,{playerElement:'tide',enemyElement:'flame'});riptide.state.player.zoneTiles[1]=card('ocean-gate','water-zone');const hunter=unit({uid:'hunter',cardId:'riptide-hunter',position:1,element:'tide',traits:['Water','Hunter'],attack:4});riptide.state.player.units=[hunter];riptide.state.enemy.units=[unit({uid:'one',position:1,health:8,maxHealth:8}),unit({uid:'two',position:1,health:8,maxHealth:8})];riptide.nextPhase();riptide.selectUnit('hunter');riptide.selectTarget('one');riptide.attack();assert.equal(hunter.exhausted,false);riptide.selectUnit('hunter');riptide.selectTarget('two');riptide.attack();assert.equal(hunter.exhausted,true);
 
-  const field=new HeroicsGame(true),fp=field.state.player;fp.essence=30;fp.hand=[card('field-gate','field'),card('ember-squire','runner')];field.playCard('field');field.playCard('runner');
-  const runner=fp.units[0];assert.equal(runner.maxHealth,3,'Field Gate gives newly summoned Units +1 temporary Health');runner.exhausted=false;field.nextPhase();field.nextPhase();field.selectUnit(runner.uid);field.advance();assert.equal(runner.position,2,'Field Gate grants +1 Movement Range');
+  const attributes=new Set(['fire','water','lightning','death','earth','divine']);assert.equal(attributes.size,6);
+  const chronicle=new HeroicsGame(true);chronicle.state.player.essence=10;chronicle.state.player.hand=[card('ember-squire','logged')];chronicle.playCard('logged');assert.ok(chronicle.state.log[0].includes('Essence'));
 
-  const fog=new HeroicsGame(true,{playerElement:'flame',enemyElement:'tide'}),fogp=fog.state.player;fogp.essence=30;fogp.hand=[card('field-gate','field-speed'),card('ember-squire','fog-runner')];fog.playCard('field-speed');fog.playCard('fog-runner');fog.state.enemy.activeZone=card('fog-marsh-gate','enemy-fog');const fogRunner=fogp.units[0];fogRunner.exhausted=false;fog.nextPhase();fog.nextPhase();fog.selectUnit(fogRunner.uid);fog.advance();
-  assert.equal(fogRunner.position,1,'Fog Marsh removes one bonus Speed while preserving normal movement');
+  const cluster=new HeroicsGame(true);cluster.state.player.essence=20;cluster.state.player.hand=[card('desert-gate','cluster-zone')];cluster.beginZonePlacement('cluster-zone');
+  const key=({q,r}:{q:number;r:number})=>`${q},${r}`;
+  assert.deepEqual(new Set(cluster.availableZonePlacements().map(key)),new Set(FIXED_ZONE_COORDINATES.map(key)),'only the four interior positions of the fixed 2-3-2 cluster are legal');
+  assert.deepEqual(new Set(cluster.invalidZonePlacements().map(key)),new Set(BLOCKED_GATE_COORDINATES.map(key)),'the four cells behind Home and Enemy Gates are permanent red-X locations');
+  for(const blocked of BLOCKED_GATE_COORDINATES)cluster.placeZone(blocked.q,blocked.r,-1);
+  assert.equal(cluster.state.tiles.length,3,'red-X placements behind either Gate are rejected');
 
-  const fogShield=new HeroicsGame(true),fsp=fogShield.state.player;fsp.essence=30;fsp.hand=[card('fog-marsh-gate','fog-zone'),card('ember-squire','fog-unit')];fogShield.playCard('fog-zone');fogShield.playCard('fog-unit');assert.equal(fsp.units[0].shieldReady,true,'Fog Marsh grants newly summoned Units Wind Step through the enemy turn');
+  const addedCombat=new HeroicsGame(true);addedCombat.state.tiles.push({id:3,q:1,r:1,kind:'zone',ownerHomeTileId:0,zoneCard:card('desert-gate','added')});const addedAttacker=unit({uid:'added-a',position:3}),addedDefender=unit({uid:'added-d',position:3});addedCombat.state.player.units=[addedAttacker];addedCombat.state.enemy.units=[addedDefender];assert.equal(addedCombat.sameZone(addedAttacker,addedDefender),true,'added hexes use physical same-tile combat');
 
-  const lightning=new HeroicsGame(true,{playerElement:'storm',enemyElement:'flame'}),lp=lightning.state.player;lp.essence=30;lp.hand=[card('lightning-plains-gate','lightning-zone'),card('skyclaw-raptor','lightning-unit')];lightning.playCard('lightning-zone');lightning.playCard('lightning-unit');const lightningUnit=lp.units[0];lightningUnit.position=1;lightningUnit.exhausted=false;const lightningTarget=unit({uid:'lightning-target',health:5,maxHealth:5,position:1});lightning.state.enemy.units=[lightningTarget];lightning.nextPhase();lightning.nextPhase();lightning.nextPhase();lightning.selectUnit(lightningUnit.uid);lightning.selectTarget(lightningTarget.uid);lightning.attack();assert.equal(lightningTarget.health,2,'Lightning Plains adds +1 Power on a Lightning Unit’s first attack');
+  const bound=new HeroicsGame(true,{playerElement:'tide',enemyElement:'flame'});bound.state.player.essence=20;bound.state.player.hand=[card('kraken','bound-kraken')];bound.playCard('bound-kraken');assert.equal(bound.state.player.units.length,0,'Zone Bound Kraken cannot enter a non-Water tile');const ocean=card('ocean-gate','bound-ocean');bound.state.tiles.push({id:3,q:1,r:1,kind:'zone',ownerHomeTileId:0,zoneCard:ocean});bound.state.player.zoneTiles[3]=ocean;bound.selectTile(3);bound.playCard('bound-kraken');assert.equal(bound.state.player.units[0].position,3,'Kraken summons directly onto the selected Water Zone');
 
-  const frost=new HeroicsGame(true),frostAttacker=unit({uid:'frost-attacker',position:1}),frostTarget=unit({uid:'frost-target',cardId:'pearl-scout',element:'tide',traits:['Water'],health:3,maxHealth:3,position:1});frost.state.player.units=[frostAttacker];frost.state.enemy.units=[frostTarget];frost.state.enemy.activeZone=card('frost-peaks-gate','frost-zone');frost.nextPhase();frost.nextPhase();frost.nextPhase();frost.selectUnit(frostAttacker.uid);frost.selectTarget(frostTarget.uid);frost.attack();assert.equal(frostTarget.health,2,'Frost Peaks reduces damage to Water Units by 1');
+  const recoil=new HeroicsGame(true,{playerElement:'flame',enemyElement:'storm'});const recoilAttacker=unit({uid:'recoil-a',position:1,health:10,maxHealth:10,attack:4}),wraith=unit({uid:'wraith',cardId:'static-wraith',name:'Static Wraith',position:1,element:'storm',traits:['Lightning','Spirit'],health:10,maxHealth:10,recoilDamage:2});recoil.state.player.units=[recoilAttacker];recoil.state.enemy.units=[wraith];recoil.nextPhase();recoil.selectUnit(recoilAttacker.uid);recoil.selectTarget(wraith.uid);recoil.attack();assert.equal(recoilAttacker.health,8,'Electric Recoil damages the attacking unit without counterattacking');
 
-  const shadow=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),sp=shadow.state.player;sp.essence=30;sp.hand=[card('shadow-ruins-gate','shadow-zone'),card('grave-banshee','dark-attacker')];shadow.playCard('shadow-zone');shadow.playCard('dark-attacker');const dark=sp.units[0];dark.position=2;dark.exhausted=false;const leaderBefore=shadow.state.enemy.health;shadow.nextPhase();shadow.nextPhase();shadow.nextPhase();shadow.selectUnit(dark.uid);shadow.attack();assert.equal(shadow.state.enemy.health,leaderBefore-dark.attack-1,'Shadow Ruins gives Dark Units +1 Power against Leaders');
+  const tribute=new HeroicsGame(true);const samurai=unit({uid:'samurai',cardId:'ember-samurai',name:'Ember Samurai',health:3,maxHealth:3});tribute.state.player.units=[samurai];tribute.state.player.hand=[card('flame-shogun','shogun')];tribute.state.player.essence=20;tribute.selectUnit('samurai');tribute.playCard('shogun');assert.ok(!tribute.state.player.units.some(u=>u.uid==='samurai')&&tribute.state.player.units.some(u=>u.cardId==='flame-shogun'),'Ember Samurai tributes into Flame Shogun');
 
-  const queen=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame',playerDeckIds:starterDeckIds('undead')}),q=queen.state.player;
-  assert.ok(['grave-banshee','queens-guardsman','forsaken-prince','skeleton-bone-parlor','queens-destruction'].every(id=>cardPool.undead.some(c=>c.id===id)),'the expanded Queen card list is available');
-  q.essence=50;q.hand=[card('undead-wizard','wizard')];q.deck=[card('gravebound-knight','knight'),card('forever-dead-king','king'),card('death-mist','mist')];queen.playCard('wizard');
-  assert.equal(q.units.length,2,'Undead Wizard deploys Gravebound Knight directly when a Gate is open');
-  assert.ok(q.units.some(u=>u.cardId==='gravebound-knight'),'Gravebound Knight occupies a Gate');
-  assert.ok(q.hand.some(c=>c.id==='forever-dead-king'),'the deployed Knight searches Forever Dead King into hand');
+  const phoenixChain=new HeroicsGame(true);const hatchling=unit({uid:'hatchling',cardId:'phoenix-hatchling',name:'Phoenix Hatchling',attack:0,health:2,maxHealth:2});phoenixChain.state.player.units=[hatchling];phoenixChain.state.player.deck=[card('phoenix','phoenix-chain')];phoenixChain.nextPhase();phoenixChain.selectUnit('hatchling');phoenixChain.unitAbility('hatchling');assert.ok(phoenixChain.state.player.units.some(u=>u.cardId==='phoenix'),'Phoenix Hatchling can tribute itself to summon Phoenix');
 
-  const queenAbility=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),qa=queenAbility.state.player;
-  queenAbility.leaderAbility();queenAbility.leaderAbility();
-  assert.equal(qa.units.filter(u=>u.cardId==='skeleton-token').length,1,'Queen summons one 1/2 Skeleton once per turn');
-  assert.equal(qa.units[0].attack,1);assert.equal(qa.units[0].health,2);
+  const tidecaller=new HeroicsGame(true,{playerElement:'tide',enemyElement:'flame'});const adept=unit({uid:'adept',cardId:'tidecaller-adept',name:'Tidecaller Adept',element:'tide',traits:['Water','Mage'],attack:3,health:4,maxHealth:4});tidecaller.state.player.units=[adept];tidecaller.state.player.hand=[card('rainfall-blessing','rain-spell')];tidecaller.state.player.essence=10;tidecaller.playCard('rain-spell');assert.equal(adept.attack,4,'Water Magic permanently empowers Tidecaller Adept');
 
-  q.hand.push(card('thorned-rose-crown','rose'));const wizard=q.units.find(u=>u.cardId==='undead-wizard')!;queen.selectUnit(wizard.uid);queen.playCard('rose');
-  assert.equal(wizard.attack,4,'Thorned Rose Crown grants the revised +2 Attack');
-  assert.equal(wizard.maxHealth,9,'Thorned Rose Crown grants +5 Health');
-  q.health=20;q.hand.push(card('soul-harvest','harvest'));queen.selectUnit(wizard.uid);queen.playCard('harvest');
-  assert.equal(q.health,25,'Soul Harvest uses the revised 5 Health recovery');
+  const fireWeakness=new HeroicsGame(true,{playerElement:'tide',enemyElement:'flame'});const fireTarget=unit({uid:'fire-target',health:10,maxHealth:10,traits:['Fire']});fireWeakness.state.enemy.units=[fireTarget];fireWeakness.state.player.hand=[card('aqua-burst','aqua')];fireWeakness.state.player.essence=10;fireWeakness.selectTarget('fire-target');fireWeakness.playCard('aqua');assert.equal(fireTarget.health,4,'Aqua Burst deals 6 to Fire targets');
 
-  const revive=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),rp=revive.state.player;rp.essence=30;rp.graveyard=[card('grave-banshee','fallen-banshee')];rp.hand=[card('raise-the-fallen','raise')];
-  revive.playCard('raise',{cardUids:['fallen-banshee']});
-  assert.ok(rp.units.some(u=>u.cardId==='grave-banshee'),'Raise the Fallen deploys a chosen Unit directly from the graveyard');
-  assert.ok(!rp.graveyard.some(c=>c.uid==='fallen-banshee'),'the revived Unit leaves the graveyard');
+  const staticEntry=new HeroicsGame(true);const staticZone=card('static-field','static-zone');staticEntry.state.tiles.push({id:3,q:1,r:1,kind:'zone',ownerHomeTileId:2,zoneCard:staticZone});staticEntry.state.enemy.zoneTiles[3]=staticZone;const entrant=unit({uid:'entrant',position:1,health:6,maxHealth:6});staticEntry.state.player.units=[entrant];staticEntry.nextPhase();staticEntry.selectUnit('entrant');staticEntry.selectTile(3);staticEntry.advance();assert.equal(entrant.health,4,'Static Field damages an enemy that enters its tile');
 
-  const bansheeGame=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),bp=bansheeGame.state.player;
-  bp.units=[unit({uid:'banshee',cardId:'grave-banshee',name:'Grave Banshee',element:'undead',traits:['Undead','Spirit','Dark']})];bansheeGame.state.enemy.units=[unit({uid:'victim',attack:5})];bansheeGame.nextPhase();
-  bansheeGame.unitAbility('banshee');bansheeGame.unitAbility('banshee');
-  assert.equal(bansheeGame.state.enemy.units[0].attack,3,'Grave Banshee ability works outside Deploy and only applies once');
+  const cinder=new HeroicsGame(true);cinder.state.player.units=[unit({uid:'witch',cardId:'cinder-witch',name:'Cinder Witch'})];const heatwave=card('heatwave','discounted-fire');cinder.state.player.hand=[heatwave];cinder.state.player.essence=2;assert.equal(cinder.effectiveCost(cinder.state.player,heatwave),2);cinder.playCard('discounted-fire');assert.equal(cinder.state.player.essence,0,'Cinder Witch reduces Fire Magic cost by 1');
 
-  const kingGame=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),kingPlayer=kingGame.state.player;kingPlayer.essence=30;kingPlayer.hand=[card('forever-dead-king','gate-king')];kingGame.playCard('gate-king');
-  const king=kingPlayer.units[0];assert.equal(king.attack,8,'Gatekeeper grants +2 Attack at the owner’s Gate');assert.equal(king.maxHealth,10,'Gatekeeper grants +2 Health at the owner’s Gate');
-  king.exhausted=false;kingGame.nextPhase();kingGame.nextPhase();kingGame.selectUnit(king.uid);kingGame.advance();assert.equal(king.attack,6,'Gatekeeper bonus ends after leaving the owner’s Gate');
+  const mask=new HeroicsGame(true);mask.state.player.hand=[card('cinder-mask','mask')];mask.state.player.essence=10;mask.playCard('mask');mask.nextPhase();mask.leaderAbility('damage');assert.equal(mask.state.player.abilityPoints,1,'Cinder Mask reduces Leader ability AP cost by 1');
 
-  const cemetery=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),cp=cemetery.state.player;cp.essence=30;cp.hand=[card('cemetery-gate','cemetery-zone'),card('grave-banshee','cemetery-unit')];cemetery.playCard('cemetery-zone');cemetery.playCard('cemetery-unit');
-  assert.equal(cp.units[0].attack,5,'Cemetery Gate grants Undead +3 Attack');cp.units[0].health=0;(cemetery as any).removeDefeated();
-  assert.equal(cp.cemetery.length,1,'defeated Undead cards enter the Cemetery pile');assert.equal(cp.graveyard.length,0,'Cemetery Gate keeps defeated Undead out of the graveyard');
+  const maelstrom=new HeroicsGame(true,{playerElement:'tide',enemyElement:'flame'},true);maelstrom.state.player.units=[unit({uid:'kraken-unit',cardId:'kraken',name:'Kraken',position:1,element:'tide',traits:['Water','Beast'],attack:15,health:25,maxHealth:25}),unit({uid:'ship-unit',cardId:'storm-sailor',name:'Storm Sailor',position:1,element:'tide',traits:['Water','Ship'],attack:4,health:4,maxHealth:4})];maelstrom.nextPhase();maelstrom.endTurn();assert.ok(!maelstrom.state.player.units.some(u=>u.uid==='ship-unit'),'Kraken Maelstrom destroys Ship units sharing its Zone');
 
-  const sacrifice=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),sacp=sacrifice.state.player;sacp.essence=30;sacp.hand=[card('ultimate-sacrifice','sacrifice-spell'),card('grave-banshee','discard-one'),card('queens-guardsman','discard-two')];sacrifice.playCard('sacrifice-spell',{cardUids:['discard-one','discard-two']});
-  assert.equal(sacp.graveyard.filter(c=>c.kind==='unit').length,2,'Ultimate Sacrifice discards two chosen Unit cards');
-
-  const muster=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),mp=muster.state.player;mp.essence=30;mp.hand=[card('for-the-queen','muster-spell')];mp.deck=[card('grave-banshee','muster-one'),card('queens-guardsman','muster-two'),card('forever-dead-king','forbidden-king')];muster.playCard('muster-spell',{cardUids:['muster-one','muster-two','forbidden-king']});
-  assert.equal(mp.units.length,2,'For the Queen deploys up to two chosen eligible Units');assert.ok(mp.deck.some(c=>c.uid==='forbidden-king'),'For the Queen cannot deploy Forever Dead King');
-
-  const destruction=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),destructionP=destruction.state.player;destructionP.essence=30;destructionP.units=[unit({uid:'friendly-sacrifice',cardId:'grave-banshee',element:'undead',traits:['Undead','Spirit','Dark']})];destruction.state.enemy.units=[unit({uid:'destroy-one'}),unit({uid:'destroy-two'}),unit({uid:'survivor'})];destructionP.hand=[card('queens-destruction','destruction-spell')];destruction.playCard('destruction-spell',{friendlyUnitUids:['friendly-sacrifice'],enemyUnitUids:['destroy-one','destroy-two']});
-  assert.equal(destructionP.units.length,0,'Queen’s Destruction sacrifices the chosen friendly Unit');assert.deepEqual(destruction.state.enemy.units.map(u=>u.uid),['survivor'],'Queen’s Destruction destroys up to two chosen enemy Units');
-
-  const guardGame=new HeroicsGame(true),guardAttacker=unit({uid:'guard-attacker',position:1,attack:3}),guard=unit({uid:'royal-guard',cardId:'queens-guardsman',name:'Queen’s Guardsman',element:'undead',traits:['Undead','Soldier','Dark'],position:1,health:6,maxHealth:6}),protectedUnit=unit({uid:'protected',cardId:'grave-banshee',element:'undead',traits:['Undead','Spirit','Dark'],position:1});guardGame.state.player.units=[guardAttacker];guardGame.state.enemy.units=[guard,protectedUnit];guardGame.nextPhase();guardGame.nextPhase();guardGame.nextPhase();guardGame.selectUnit(guardAttacker.uid);guardGame.selectTarget(protectedUnit.uid);guardGame.attack();assert.equal(protectedUnit.health,3,'Royal Guard prevents attacks on other Units in its Zone');guardGame.selectTarget(protectedUnit.uid);guardGame.selectTarget(guard.uid);guardGame.attack();assert.equal(guard.health,3,'the attacker may target Queen’s Guardsman');
-
-  const princeGame=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),prince=unit({uid:'prince',cardId:'forsaken-prince',name:'The Forsaken Prince',element:'undead',traits:['Undead','Royal','Dark'],position:1,attack:5,health:10,maxHealth:10});princeGame.state.player.units=[prince];const princeTargetOne=unit({uid:'prince-target-one',position:1,health:6,maxHealth:6,attack:1}),princeTargetTwo=unit({uid:'prince-target-two',position:1,health:6,maxHealth:6,attack:1});princeGame.state.enemy.units=[princeTargetOne,princeTargetTwo];princeGame.nextPhase();princeGame.nextPhase();princeGame.nextPhase();princeGame.selectUnit(prince.uid);princeGame.selectTarget(princeTargetOne.uid);princeGame.attack();assert.equal(prince.exhausted,false,'The Forsaken Prince remains ready after its first Unit attack');princeGame.selectUnit(prince.uid);princeGame.selectTarget(princeTargetTwo.uid);princeGame.attack();assert.equal(prince.exhausted,true,'The Forsaken Prince exhausts after its second Unit attack');
-
-  const royalBlood=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),rbp=royalBlood.state.player;rbp.essence=50;rbp.hand=[card('forsaken-prince','blood-prince'),card('forever-dead-king','blood-king')];royalBlood.playCard('blood-prince');royalBlood.playCard('blood-king');const bloodPrince=rbp.units.find(u=>u.cardId==='forsaken-prince')!;assert.equal(bloodPrince.attack,8,'Royal Blood grants The Forsaken Prince +3 Attack beside the King');assert.equal(bloodPrince.maxHealth,9,'Royal Blood grants +3 Health beside the King');
-
-  const boneGame=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),boneP=boneGame.state.player;boneP.essence=30;boneP.hand=[card('skeleton-bone-parlor','bone-parlor')];boneGame.playCard('bone-parlor');boneGame.leaderAbility();const parlor=boneP.units.find(u=>u.cardId==='skeleton-bone-parlor')!,token=boneP.units.find(u=>u.cardId==='skeleton-token')!;assert.equal(parlor.attack,8,'Bone Parlor gains +2 Attack for another Skeleton in its Zone');assert.equal(token.attack,3,'Bone Parlor grants other Skeletons +2 Attack');
-
-  const deathBurst=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),dbp=deathBurst.state.player;dbp.units=[unit({uid:'burst-prince',cardId:'forsaken-prince',element:'undead',traits:['Undead','Royal','Dark'],health:0})];deathBurst.state.enemy.units=[unit({uid:'burst-target',health:5,maxHealth:5})];(deathBurst as any).removeDefeated();assert.equal(deathBurst.state.enemy.units[0].health,3,'The Forsaken Prince deals 2 damage to all enemy Units when defeated');
-
-  const reaperGame=new HeroicsGame(true,{playerElement:'undead',enemyElement:'flame'}),reaperP=reaperGame.state.player;reaperP.health=20;const reaper=unit({uid:'reaper',cardId:'cemetery-reaper',name:'Cemetery Reaper',element:'undead',traits:['Undead','Reaper','Dark'],position:1,attack:6,health:5,maxHealth:5}),reaperVictim=unit({uid:'reaper-victim',position:1,health:1,maxHealth:1,attack:0});reaperP.units=[reaper];reaperGame.state.enemy.units=[reaperVictim];reaperGame.nextPhase();reaperGame.nextPhase();reaperGame.nextPhase();reaperGame.selectUnit(reaper.uid);reaperGame.selectTarget(reaperVictim.uid);reaperGame.attack();assert.equal(reaperP.health,25,'Cemetery Reaper heals the Queen for the revised 5 Health after a kill');
-
-  const mirror=new HeroicsGame(true,{playerElement:'tide',enemyElement:'flame',playerDeckIds:['pearl-scout','ocean-gate','mending-tide']});
-  assert.equal(mirror.state.player.element,'tide');assert.ok(mirror.state.player.hand.every(c=>c.element==='tide'||c.element==='neutral'),'neutral Zone cards are legal in every faction deck');
+  const spectator=new HeroicsGame(true,{playerElement:'flame',enemyElement:'storm'},true);let spectatorSteps=0,sawTopCpu=false,sawTopBattle=false;
+  while(!spectator.state.winner&&spectatorSteps<4000){spectator.autoPlayStep();spectatorSteps++;if(spectator.state.phase==='enemy'){sawTopCpu=true;if(spectator.cpuPhaseLabel()==='battle')sawTopBattle=true}}
+  assert.ok(sawTopCpu&&sawTopBattle,'AI vs AI advances the top CPU through Deploy and Battle phases');
+  assert.ok(spectator.state.winner,'AI vs AI spectator simulation reaches a winner without stalling');
+  assert.ok(spectator.state.log.some(entry=>entry.includes('plays')),'AI vs AI actions are recorded in the Battle Chronicle');
+  spectator.restart();let replaySteps=0;while(!spectator.state.winner&&replaySteps<4000){spectator.autoPlayStep();replaySteps++}assert.ok(spectator.state.winner,'AI vs AI replay resets both CPU phase trackers and finishes again');
 }
 
-ruleTests();
-const runs=200,results=Array.from({length:runs},()=>simulateMatch());
-const victories=results.filter(r=>r.winner==='victory').length,defeats=results.filter(r=>r.winner==='defeat').length,stalls=results.filter(r=>r.winner==='stall').length;
-const averageTurns=results.reduce((sum,r)=>sum+r.turns,0)/runs,ultimateRate=results.filter(r=>r.playerStage===3||r.enemyStage===3).length/runs;
-assert.equal(stalls,0,`no simulated match should exceed 100 turns (stalls: ${stalls})`);
-assert.ok(averageTurns>=4&&averageTurns<=45,`average match length should stay within 4–45 turns (actual: ${averageTurns.toFixed(1)})`);
-
-console.log('\nHEROICS AUTOMATED PLAYTEST');
-console.log('──────────────────────────');
+rules();
+const runs=200,results=Array.from({length:runs},()=>simulate());const stalls=results.filter(result=>result.winner==='stall').length,average=results.reduce((sum,result)=>sum+result.turns,0)/runs;
+assert.equal(stalls,0);assert.ok(average>=3&&average<=50);
+console.log('\nHEROICS PHASE + HEX UPDATE PLAYTEST');
+console.log('────────────────────────────────');
 console.log(`Matches simulated: ${runs}`);
-console.log(`Ignis wins:       ${victories} (${(victories/runs*100).toFixed(1)}%)`);
-console.log(`Shellgon wins:    ${defeats} (${(defeats/runs*100).toFixed(1)}%)`);
 console.log(`Stalled matches:  ${stalls}`);
-console.log(`Average turns:    ${averageTurns.toFixed(1)}`);
-console.log(`Ultimate seen:    ${(ultimateRate*100).toFixed(1)}%`);
+console.log(`Average turns:    ${average.toFixed(1)}`);
 console.log('Rule checks:      PASS');
-
-const matchupRuns=2;
-for(const [player,enemy] of [['storm','flame'],['storm','tide'],['undead','flame']] as const){
-  const matchup=Array.from({length:matchupRuns},()=>simulateMatch(100,player,enemy)),matchupStalls=matchup.filter(r=>r.winner==='stall').length;
-  assert.equal(matchupStalls,0,`${player} vs ${enemy} should not stall`);
-  console.log(`${player} vs ${enemy}: ${matchup.filter(r=>r.winner==='victory').length}/${matchupRuns} player wins, 0 stalls`);
-}
+for(const [player,enemy] of [['storm','flame'],['undead','tide']] as const){const games=Array.from({length:4},()=>simulate(100,player,enemy));assert.equal(games.filter(g=>g.winner==='stall').length,0);console.log(`${player} vs ${enemy}: no stalls`)}

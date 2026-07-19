@@ -1,6 +1,6 @@
 # Heroics: Clash of Leaders
 
-A Phaser + TypeScript browser card-game prototype featuring three battlefield Zones, Gate summoning, Essence, Leader and Unit abilities, AI, online friend rooms, and four-stage Leader evolution.
+A Phaser + TypeScript browser card-game prototype featuring a fixed seven-position hex battlefield, Gate summoning, Essence, Leader and Unit abilities, playable AI, AI-vs-AI spectating, online friend rooms, and four-stage Leader evolution.
 
 Heroics is an active beta for private testing with friends. It is not a finished or production-ready game.
 
@@ -15,7 +15,7 @@ Open the local URL printed by Vite, normally `http://localhost:5173/`.
 
 ## Online multiplayer
 
-Heroics supports private two-player rooms with five-character invite codes. Each player uses the 20-card deck saved in their own browser. The server is authoritative: it validates turn order, keeps opposing hands and deck order private, synchronizes every action, and preserves disconnected matches for 10 minutes.
+Heroics supports private two-player rooms with five-character invite codes. Each player uses the 40-card deck saved in their own browser. The server is authoritative: it validates turn order, keeps opposing hands and deck order private, synchronizes every action, and preserves disconnected matches for 10 minutes.
 
 ## Beta deployment
 
@@ -53,18 +53,19 @@ If the frontend and match server are hosted separately, build the frontend with 
 ## Start screen and deck builder
 
 - **Start Game** launches the last saved deck and opponent.
+- **Watch AI vs AI** starts a spectated match between the selected Leader and opponent. Both CPUs act one step at a time; pause or resume while inspecting the board.
 - **Play Online** creates or joins a private friend match using the saved deck.
 - **Create a Deck** opens the visual deck builder.
 - Choose Ignis, Shellgon, the Queen of the Dead, or Tempestfang as your Leader.
-- Clicking a Leader opens an information screen with Health, ability, evolution rules, strategy, signature cards, and a confirmation button. Your saved deck changes only after confirmation.
+- Clicking a Leader opens an information screen with Health, ability, evolution rules, strategy, signature cards, and a confirmation button. Confirming changes the Leader while preserving the current deck.
 - Choose the Fire, Water, Queen of the Dead, or Tempestfang deck as the AI opponent.
 - Click any card to see its artwork, Essence cost, statistics, and effect.
-- Neutral Zone cards can be included in every Leader deck. Zone cards keep names such as **Desert Gate** and **Ocean Gate**.
-- Add up to 3 copies of a card and build an exact 20-card deck.
+- Every Leader can use every card in the complete Fire, Water, Thunder, Death, and Zone library. Zone cards keep names such as **Desert Gate** and **Ocean Gate**.
+- Add up to 3 copies of a card and build an exact 40-card deck.
 - The deck count and complete deck list update immediately.
 - Your Leader, opponent, and deck are saved automatically in browser storage.
 
-## Evolution Phase
+## Evolution
 
 Ignis and Shellgon progress through four forms:
 
@@ -75,7 +76,7 @@ Ignis and Shellgon progress through four forms:
 | Ascended | 15 | 7 |
 | Ultimate | 20 | 12 |
 
-Enter the Evolution Phase after reaching the next requirement. Review the next form and choose **Begin Evolution**. Evolution grants permanent statistics, a stronger Leader ability, a new portrait, and a form-specific effect.
+When the next requirement is met, choose **Evolve Now** at any point during your turn. Evolution may be activated only once per turn and grants the new form's total Health, Attack, Ability Points, portrait, and abilities.
 
 The Queen of the Dead starts at 30 Health and evolves at 3, 7, and 12 Glory into Grave Regent, Lich Empress, and Sovereign of Endless Night. Her once-per-turn **Raise Skeleton** ability summons a 1 Attack / 2 Health Skeleton token; later forms summon ready or additional Skeletons.
 
@@ -89,36 +90,46 @@ Tempestfang uses condition-based evolution instead of Glory:
 2. Deal 6 damage in a single turn to become **Thunder-Crowned**.
 3. Hold 3 Storm Charges or cast **Stormheart Cataclysm** to become **Storm-Devourer**.
 
-Storm abilities are once per turn and can target a selected enemy Unit or default to the rival Leader. Select a friendly Unit before casting healing, Wind Step, or Unit Equipment cards. In this lane adaptation, **Speed +1** readies a Unit for movement, “blocking” means being the defending Unit in combat, and Tempest Magic chooses damage plus push when an enemy Unit is selected or damage plus Rainfield when targeting the rival Leader. Storm-Devourer unlocks all three Eye of the Storm choices and may automatically absorb the lowest-cost Magic card in hand for Storm Blast.
+Storm abilities are once per turn and can target a selected enemy Unit or default to the rival Leader. Select a friendly Unit before casting healing, Wind Step, or Unit Equipment cards. On the hex map, **Speed +1** increases movement by one connected tile, “blocking” means becoming the defending Unit in that tile, and Tempest Magic chooses damage plus push when an enemy Unit is selected or damage plus Rainfield when targeting the rival Leader. Storm-Devourer unlocks all three Eye of the Storm choices and may automatically absorb the lowest-cost Magic card in hand for Storm Blast.
 
 ## Zone and Gate battlefield
 
 - The old Field-card classification is now **Zone**.
 - Card names still use **Gate**, such as Desert Gate, Ocean Gate, and Volcano Gate.
-- The shared battlefield has three physical Zones: your Gate Zone, the Center Gate Zone, and the enemy Gate Zone.
-- Every physical Zone contains three Gate slots for each player, so each player may control up to three Units in that Zone.
-- Units are summoned into open slots at their home Gate Zone.
-- A Unit cannot move to the next Zone while an enemy Unit remains in its current physical Zone.
+- The shared battlefield starts as three connected hex tiles: your Gate, the center tile, and the enemy Gate.
+- Tiles use point-top hexagons matching the field reference: every legal neighbour shares one complete edge, never only a corner.
+- Each physical tile can contain up to three Units from each team. The UI never draws empty slots, slot frames, or monster-slot labels.
+- Summoned Units appear as their card artwork directly on the hex itself. Standard Units enter the player’s starting Gate hex; Zone Bound, Ship, and other card rules can change that destination.
+- A Unit cannot leave a contested tile while an enemy Unit remains there, and multi-tile movement stops on the first contested tile. Sneak and matching rules such as Dive can override this restriction.
 - Units can only battle enemy Units occupying the same physical Zone.
-- Each player can have only one active Zone card. Playing a new Zone sends the previous Zone to the graveyard.
+- The match starts with exactly three edge-connected hexes and each player draws five cards. Both Leader portraits are visible from the opening battle state.
+- Playing a Zone card fills one of exactly four fixed positions: the two upper and two lower hexes between the three original Gate tiles. Together they form the reference 2–3–2 honeycomb.
+- Legal placement is shown only on those four shared edges. The four outer cells behind the Home and Enemy Gates are permanent red-X locations and are rejected without spending the card or Essence.
+- The shared battlefield can never exceed the fixed seven-tile footprint, and a placed Zone never unlocks another outer ring.
+- Units may move into a newly created Zone during that same turn.
+- The battlefield surface contains only hex art, summoned Unit art, and active Zone-placement indicators. Click a selected Zone hex again to inspect its image and effect.
 
-The neutral Zone set contains Desert Gate, Ocean Gate, Volcano Gate, Field Gate, Lightning Plains Gate, Fog Marsh Gate, Frost Peaks Gate, Shadow Ruins Gate, and Cemetery Gate. Standard Zones cost 2 Essence; Cemetery Gate costs 3 because its +3/+3 Undead bonus and Cemetery replacement effect are substantially stronger.
+The neutral Zone set contains Desert Gate, Ocean Gate, Volcano Gate, Field Gate, Lightning Plains Gate, Fog Marsh Gate, Frost Peaks Gate, Shadow Ruins Gate, and Cemetery Gate. Water adds **Lighthouse**, and Thunder adds **Static Field**. Standard Zones cost 2 Essence; Cemetery Gate costs 3 because its +3/+3 Undead bonus and Cemetery replacement effect are substantially stronger.
+
+Every Death card, Zone card, and card introduced in the expanded Water, Fire, and Thunder sets has unique illustrated artwork. The Home Gate, Center Gate, and Enemy Gate also have dedicated battlefield scenes. Ignis and Shellgon have identity-matched portraits for their Awakened, Ascended, and Ultimate forms, and in-battle Leader panels show uncropped portrait art.
 
 ## Turn structure
 
 Each turn follows one locked sequence:
 
 1. **Deploy Phase** — summon Units, play Equipment, and activate a Zone using Essence.
-2. **Evolution Phase** — transform when the Glory requirement is met.
-3. **Advance Phase** — move ready units toward the enemy gate.
-4. **Battle Phase** — select an attacker and an enemy occupying the same physical zone. A Unit can strike the rival Leader only after reaching the enemy Gate.
-5. **End Turn** — the rival completes the same turn sequence.
+2. **Battle Phase** — move ready Units, activate abilities, and attack enemies in the same hex. A Unit can strike the rival Leader only after reaching the enemy Gate.
+3. **End Turn** — the rival completes the same turn sequence.
 
-Use **End Phase** to move forward. Earlier phases cannot be reopened during the same turn, and **End Turn** appears only during Battle Phase. Magic cards, Leader abilities, and activated Unit abilities remain usable throughout all four phases of your turn. Ignis, Shellgon, the Queen, and Tempestfang share the same once-per-turn Leader-ability lock.
+Magic cards may be played during Deploy or Battle. Leader and activated Unit abilities are used during Battle. Leader abilities spend Ability Points instead of Essence; AP refreshes to the current form maximum at the start of each turn. Unit attacks never cause counterattacks. Select a Unit, press **Attack**, choose a target, then confirm or cancel without ending the rest of the turn.
+
+The title screen includes a seven-step tutorial. Battle Chronicle is now a click-open full match record showing card costs, remaining resources, summons, movement, ability spending, damage sources and targets, healing, and defeats. Zone information closes with its X button or Escape.
+
+AI-vs-AI mode uses the selected Leader and saved custom deck for the bottom CPU and the selected opponent's starter deck for the top CPU. Both sides visibly take Deploy and Battle actions. The spectator can pause, resume, exit, open the Chronicle, and inspect either Leader, any Unit, any played Zone, and both public piles without taking control of the match.
 
 Battlefield Units display their card artwork. Click a card in your hand to open its full artwork, cost, statistics, and rules in the side inspector, then press **Play Card** to commit it. Choice-based Queen cards open a server-validated target picker.
 
-Click either Leader during a match to view current Health, Attack, Defense, evolution stage, ability, passive, Equipment, statuses, and the complete evolution ability list. Click the Grave count to open the public Graveyard/Cemetery viewer; cards are sorted by type and individually inspectable. Active Zone cards and battlefield Units are also clickable for full rules and status details.
+Click either Leader during a match to view current Health, Attack, Defense, evolution stage, ability, passive, Equipment, statuses, and the complete evolution ability list. Click the Grave count to open the public Graveyard/Cemetery viewer; cards are sorted by type and individually inspectable. Connected Zone hexes and battlefield Units are also clickable for full rules and status details.
 
 ## Test-play and optimization loop
 
@@ -126,7 +137,7 @@ Click either Leader during a match to view current Health, Attack, Defense, evol
 npm run optimize
 ```
 
-The loop performs Zone-capacity, movement-blocking, same-Zone combat, all-turn Magic, once-per-turn ability, Zone-effect, expanded Queen-card, and evolution assertions. It then simulates 200 complete matches, reports win rates, stalls, match length, and ultimate-form frequency, and creates a production build.
+The loop performs connected-cluster, illegal-placement, Zone-capacity, contested movement, same-hex combat, all-turn Magic, once-per-turn ability, universal deck legality, AI-vs-AI phase progression, Zone Bound, Recoil, Tribute, Static Field, new set, Queen-card, and evolution assertions. It then simulates 200 complete matches, checks for stalls and match length, and creates a production build.
 
 It also starts a temporary two-player server and verifies room creation, hidden opponent information, synchronized turns, out-of-turn rejection, disconnect/reconnect, and surrender outcomes.
 
@@ -149,5 +160,5 @@ npm run test:online
 - Disconnected matches are preserved for 10 minutes, then may expire.
 - Player progress and deck choices are saved locally in each browser.
 - The free Render plan may sleep after inactivity, so the first connection can be slow.
-- Matchmaking, spectator mode, accounts, ranking, and custom domains are not included yet.
+- Public matchmaking, accounts, ranking, and custom domains are not included yet. AI-vs-AI spectating is local to the viewer and does not create an online room.
 - Balance is still under review; automated simulations report recommendations but do not make rule changes automatically.

@@ -5,9 +5,9 @@
 .portrait img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: center 22%;
-  transform: scale(1.13);
+  object-fit: contain;
+  object-position: center;
+  transform: none;
 }
 
 .card-art {

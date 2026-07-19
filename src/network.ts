@@ -1,5 +1,6 @@
 import type { CardDef } from './cards';
-import type { GameState, PlayCardChoices, Player, Unit } from './game';
+import { BLOCKED_GATE_COORDINATES, FIXED_ZONE_COORDINATES, MAX_FIELD_TILES, STARTING_TILE_COUNT } from './game';
+import type { GameState, PlayCardChoices, Player, Unit, ZonePlacement } from './game';
 import { nextForm } from './evolution';
 import type { DeckConfig } from './deck';
 
@@ -19,8 +20,17 @@ export interface GameController {
   nextPhase():void;
   evolveLeader():void;
   advance():void;
+  beginAttack():void;
+  cancelAttack():void;
   attack():void;
-  leaderAbility(choice?:'damage'|'heal'|'push'):void;
+  leaderAttack():void;
+  leaderAbility(choice?:string):void;
+  selectTile(position:number):void;
+  beginZonePlacement(uid:string):void;
+  placeZone(q:number,r:number,anchorId:number):void;
+  cancelZonePlacement():void;
+  availableZonePlacements(anchorId?:number):ZonePlacement[];
+  invalidZonePlacements():ZonePlacement[];
   unitAbility(uid:string):void;
   dischargeCore():void;
   absorbMagic():void;
@@ -67,20 +77,45 @@ export class OnlineGameClient implements GameController {
   effectiveCost(player:Player,card:CardDef){
     let cost=card.cost;
     if(player.element==='storm'&&player.evolutionStage>=3&&card.kind==='magic')cost=Math.max(1,cost-1);
-    if(player.activeZone?.zone==='volcano'&&card.kind==='magic'&&card.traits?.includes('Fire')&&!player.zoneSpellDiscountUsed)cost=Math.max(0,cost-1);
+    if(player.zoneTiles.some(zone=>zone?.zone==='volcano')&&card.kind==='magic'&&card.traits?.includes('Fire')&&!player.zoneSpellDiscountUsed)cost=Math.max(0,cost-1);
+    if(card.kind==='magic'&&card.traits?.includes('Fire')&&player.units.some(unit=>unit.cardId==='cinder-witch'))cost=Math.max(0,cost-1);
     return cost;
   }
   canEvolve(player:Player){const next=nextForm(player.element,player.evolutionStage);if(!next)return false;if(player.element!=='storm')return player.glory>=next.gloryRequired;if(player.evolutionStage===0)return player.magicCastTotal>=2;if(player.evolutionStage===1)return player.damageLastTurn>=6;return player.stormCharges>=3||player.tempestMagicCast}
   evolutionProgress(player:Player){if(player.element!=='storm'){const next=nextForm(player.element,player.evolutionStage);return next?`${player.glory} / ${next.gloryRequired} Glory`:'Maximum evolution'}if(player.evolutionStage===0)return `${Math.min(2,player.magicCastTotal)} / 2 Magic cards cast`;if(player.evolutionStage===1)return `${Math.min(6,player.damageLastTurn)} / 6 damage last turn`;if(player.evolutionStage===2)return `${player.stormCharges} / 3 Storm Charges • or cast Tempest Magic`;return 'Maximum evolution'}
-  sameZone(attacker:Unit,target:Unit){return attacker.position+target.position===2}
+  sameZone(attacker:Unit,target:Unit){
+    const owner=(unit:Unit)=>this.state.player.units.some(item=>item.uid===unit.uid)?this.state.player:this.state.enemy.units.some(item=>item.uid===unit.uid)?this.state.enemy:undefined;
+    const physical=(player:Player,position:number)=>position>2?position:position===1?1:position===0?player.homeTileId:2-player.homeTileId;
+    const a=owner(attacker),b=owner(target);return Boolean(a&&b&&physical(a,attacker.position)===physical(b,target.position));
+  }
   playCard(uid:string,choices:PlayCardChoices={}){this.action('playCard',{uid,choices})}
   selectUnit(uid:string){this.action('selectUnit',{uid})}
   selectTarget(uid:string){this.action('selectTarget',{uid})}
   nextPhase(){this.action('nextPhase')}
   evolveLeader(){this.action('evolveLeader')}
   advance(){this.action('advance')}
+  beginAttack(){this.action('beginAttack')}
+  cancelAttack(){this.action('cancelAttack')}
   attack(){this.action('attack')}
-  leaderAbility(choice:'damage'|'heal'|'push'='damage'){this.action('leaderAbility',{choice})}
+  leaderAttack(){this.action('leaderAttack')}
+  leaderAbility(choice:string='damage'){this.action('leaderAbility',{choice})}
+  selectTile(position:number){this.action('selectTile',{position})}
+  beginZonePlacement(uid:string){this.action('beginZonePlacement',{uid})}
+  placeZone(q:number,r:number,anchorId:number){this.action('placeZone',{q,r,anchorId})}
+  cancelZonePlacement(){this.action('cancelZonePlacement')}
+  availableZonePlacements(anchorId=this.state.player.homeTileId){
+    if(this.state.tiles.length>=MAX_FIELD_TILES)return [];
+    const occupied=new Set(this.state.tiles.map(tile=>`${tile.q},${tile.r}`));
+    const distance=(a:{q:number;r:number},b:{q:number;r:number})=>(Math.abs(a.q-b.q)+Math.abs(a.q+a.r-b.q-b.r)+Math.abs(a.r-b.r))/2;
+    const preferred=this.state.tiles.find(tile=>tile.id===anchorId);
+    return FIXED_ZONE_COORDINATES.filter(({q,r})=>!occupied.has(`${q},${r}`)).map(({q,r})=>{
+      const anchor=this.state.tiles.filter(tile=>tile.id<STARTING_TILE_COUNT&&distance(tile,{q,r})===1).sort((a,b)=>a.id-b.id)[0];
+      return {anchorId:anchor.id,q,r};
+    }).sort((a,b)=>(preferred&&distance(preferred,a)===1?0:1)-(preferred&&distance(preferred,b)===1?0:1)||a.r-b.r||a.q-b.q);
+  }
+  invalidZonePlacements(){
+    return BLOCKED_GATE_COORDINATES.map(({q,r})=>({anchorId:-1,q,r}));
+  }
   unitAbility(uid:string){this.action('unitAbility',{uid})}
   dischargeCore(){this.action('dischargeCore')}
   absorbMagic(){this.action('absorbMagic')}

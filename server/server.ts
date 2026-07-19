@@ -41,9 +41,11 @@ const roomCode=()=>{let code='';do code=randomBytes(4).toString('hex').slice(0,5
 function validDeck(value:unknown):value is DeckChoice{
   if(!value||typeof value!=='object')return false;
   const deck=value as DeckChoice;
-  return elements.has(deck.leader)&&Array.isArray(deck.cards)&&deck.cards.length===20&&deck.cards.every(id=>{
+  const copies=new Map<string,number>();
+  return elements.has(deck.leader)&&Array.isArray(deck.cards)&&deck.cards.length===40&&deck.cards.every(id=>{
     const card=typeof id==='string'?cardById(id):undefined;
-    return Boolean(card&&cardAllowedForLeader(card,deck.leader));
+    if(!card||!cardAllowedForLeader(card,deck.leader))return false;
+    copies.set(id,(copies.get(id)??0)+1);return copies.get(id)!<=3;
   });
 }
 
@@ -59,11 +61,17 @@ function canonicalWinner(room:Room){
 
 function viewFor(room:Room,seat:Seat){
   const state=structuredClone(room.game!.state);
-  if(seat==='guest')[state.player,state.enemy]=[state.enemy,state.player];
+  if(seat==='guest'){
+    [state.player,state.enemy]=[state.enemy,state.player];
+    state.tiles=state.tiles.map(tile=>({...tile,q:2-tile.q,r:-tile.r}));
+    if(state.selectedPlacement)state.selectedPlacement={...state.selectedPlacement,q:2-state.selectedPlacement.q,r:-state.selectedPlacement.r};
+  }
   state.enemy.hand=[];state.enemy.deck=[];
   state.phase=room.active===seat?room.phase:'enemy';
   state.selectedUnit=room.active===seat?state.selectedUnit:null;
   state.selectedTarget=room.active===seat?state.selectedTarget:null;
+  state.pendingZoneUid=room.active===seat?state.pendingZoneUid:null;
+  state.selectedPlacement=room.active===seat?state.selectedPlacement:null;
   state.winner=state.player.health<=0?'defeat':state.enemy.health<=0?'victory':null;
   return state;
 }
@@ -93,8 +101,15 @@ function perform(room:Room,seat:Seat,action:string,payload:Record<string,unknown
     else if(action==='nextPhase')game.nextPhase();
     else if(action==='evolveLeader')game.evolveLeader();
     else if(action==='advance')game.advance();
+    else if(action==='beginAttack')game.beginAttack();
+    else if(action==='cancelAttack')game.cancelAttack();
     else if(action==='attack')game.attack();
-    else if(action==='leaderAbility')game.leaderAbility(payload.choice==='heal'?'heal':payload.choice==='push'?'push':'damage');
+    else if(action==='leaderAttack')game.leaderAttack();
+    else if(action==='leaderAbility')game.leaderAbility(typeof payload.choice==='string'?payload.choice:'damage');
+    else if(action==='selectTile'&&typeof payload.position==='number')game.selectTile(payload.position);
+    else if(action==='beginZonePlacement'&&typeof payload.uid==='string')game.beginZonePlacement(payload.uid);
+    else if(action==='placeZone'&&typeof payload.q==='number'&&typeof payload.r==='number'&&typeof payload.anchorId==='number')game.placeZone(guest?2-payload.q:payload.q,guest?-payload.r:payload.r,payload.anchorId);
+    else if(action==='cancelZonePlacement')game.cancelZonePlacement();
     else if(action==='unitAbility'&&typeof payload.uid==='string')game.unitAbility(payload.uid);
     else if(action==='dischargeCore')game.dischargeCore();
     else if(action==='absorbMagic')game.absorbMagic();
@@ -119,7 +134,7 @@ wss.on('connection',socket=>{
   socket.on('message',raw=>{
     let message:any;try{message=JSON.parse(raw.toString())}catch{return error(socket,'Invalid network message.')}
     if(message.type==='create'){
-      if(!validDeck(message.deck))return error(socket,'Your saved deck must contain exactly 20 valid cards.');
+      if(!validDeck(message.deck))return error(socket,'Your saved deck must contain exactly 40 valid cards.');
       const code=roomCode();const room:Room={code,host:{socket:null,token:token(),deck:message.deck,connected:true,rematch:false},guest:null,game:null,active:'host',phase:'deploy',createdAt:Date.now()};
       rooms.set(code,room);attach(socket,room,'host');send(socket,{type:'room-created',roomCode:code,reconnectToken:room.host.token});broadcast(room);return;
     }
@@ -127,7 +142,7 @@ wss.on('connection',socket=>{
       const code=String(message.roomCode||'').trim().toUpperCase();const room=rooms.get(code);
       if(!room)return error(socket,'Room not found. Check the five-character code.');
       if(room.guest)return error(socket,'That room already has two players.');
-      if(!validDeck(message.deck))return error(socket,'Your saved deck must contain exactly 20 valid cards.');
+      if(!validDeck(message.deck))return error(socket,'Your saved deck must contain exactly 40 valid cards.');
       room.guest={socket:null,token:token(),deck:message.deck,connected:true,rematch:false};attach(socket,room,'guest');send(socket,{type:'room-joined',roomCode:code,reconnectToken:room.guest.token});startMatch(room);return;
     }
     if(message.type==='reconnect'){
