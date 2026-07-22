@@ -332,7 +332,7 @@ function leaderAbilityButtons(s:GameState){
 }
 
 function controls(s:GameState){
-  if(spectatorMode)return `<div class="phase-guide spectator-guide"><span>Both Leaders are CPU-controlled. You can still inspect Leaders, Units, Zones, Graveyards, and the Battle Chronicle.</span></div><div class="controls spectator-controls"><div class="phases"><button disabled class="active"><i>◉</i>AI VS AI</button></div><div class="actions"><button data-spectator-toggle>${spectatorPaused?'Resume Match':'Pause Match'}</button><button class="end" data-ui="menu">Exit Spectator</button></div></div>`;
+  if(spectatorMode)return `<div class="phase-guide spectator-guide"><span>Both Leaders are CPU-controlled. You can still inspect Leaders, Units, Zones, Graveyards, and the Battle Chronicle.</span></div><div class="controls spectator-controls"><div class="phases"><button disabled class="active"><i>◉</i>AI VS AI</button></div><div class="actions"><button data-spectator-toggle>${spectatorPaused?'Resume Match':'Pause Match'}</button><button data-open-chronicle>Battle Chronicle</button><button class="end" data-ui="menu">Exit Spectator</button></div></div>`;
   const phases=['deploy','battle'],storm=s.player.element==='storm',active=s.phase!=='enemy';
   const selected=s.player.units.find(u=>u.uid===s.selectedUnit),unitAbility=selected?.cardId==='grave-banshee'?`<button data-action="unit-ability" ${selected.unitAbilityUsed?'disabled':''}>Banshee: Drain Attack</button>`:selected?.cardId==='phoenix-hatchling'?`<button data-action="unit-ability" ${selected.unitAbilityUsed?'disabled':''}>Tribute for Phoenix</button>`:'';
   return `<div class="phase-guide"><span>${phaseHelp[s.phase]??'The rival is taking its turn.'}</span></div><div class="controls"><div class="phases">${phases.map((p,i)=>`<button disabled class="${s.phase===p?'active':''}"><i>${i+1}</i>${p}</button>`).join('')}</div><div class="actions">${active&&game?.canEvolve(s.player)&&!s.player.evolvedThisTurn?'<button class="evolve-action" data-action="evolve">Evolve Now • Once/Turn</button>':''}${s.phase==='battle'&&selected?'<button data-action="advance">Move selected</button>':''}${s.phase==='battle'&&selected&&!s.attackMode?'<button data-action="begin-attack">Attack</button>':''}${s.attackMode?'<button data-action="attack">Confirm Attack</button><button data-action="cancel-attack">Cancel</button>':''}${active?leaderAbilityButtons(s)+unitAbility:''}${storm&&s.player.evolutionStage>=3&&active?'<button data-action="absorb">Devour Magic • 5</button>':''}${storm&&s.player.coreEquipped&&s.player.stormCharges>=3&&active?'<button data-action="core">Core Discharge • 3</button>':''}<button class="end" data-action="next" ${active?'':'disabled'}>${s.phase==='battle'?'End Turn':'Start Battle ›'}</button></div></div>`;
@@ -371,6 +371,14 @@ function toggleChoice(category:keyof PlayCardChoices,uid:string,max:number){
 
 function bindBattle(){
   if(!game)return;
+  app.onclick=event=>{
+    const target=(event.target as HTMLElement).closest<HTMLElement>('[data-open-chronicle],[data-close-chronicle]');
+    if(!target)return;
+    event.preventDefault();
+    event.stopPropagation();
+    chronicleOpen=target.hasAttribute('data-open-chronicle');
+    renderBattle(game!.state);
+  };
   app.querySelectorAll<HTMLElement>('[data-inspect-card]').forEach(el=>el.onclick=()=>{inspectedBattleCardUid=el.dataset.inspectCard!;inspectedUnit=null;inspectedZone=null;renderBattle(game!.state)});
   app.querySelectorAll<HTMLElement>('[data-play-card]').forEach(el=>el.onclick=()=>{if(spectatorMode)return;const uid=el.dataset.playCard!,card=game!.state.player.hand.find(c=>c.uid===uid);if(card?.kind==='zone'){inspectedBattleCardUid=null;game!.beginZonePlacement(uid)}else if(card&&specialIds.has(card.id)){specialCardUid=uid;specialChoices={};renderBattle(game!.state)}else{inspectedBattleCardUid=null;game!.playCard(uid)}});
   app.querySelectorAll<HTMLElement>('[data-close-inspector]').forEach(el=>el.onclick=()=>{inspectedBattleCardUid=null;renderBattle(game!.state)});
@@ -381,8 +389,8 @@ function bindBattle(){
   app.querySelectorAll<HTMLElement>('[data-select-tile]').forEach(el=>el.onclick=event=>{if((event.target as HTMLElement).closest('[data-unit],[data-target]'))return;const tileId=Number(el.dataset.selectTile);if(el.dataset.zoneTile&&(spectatorMode||game!.state.selectedTile===tileId)){inspectedTile=tileId;renderBattle(game!.state)}else if(!spectatorMode)game!.selectTile(tileId)});
   app.querySelectorAll<HTMLElement>('[data-place-zone]').forEach(el=>el.onclick=()=>{if(!spectatorMode)game!.placeZone(Number(el.dataset.q),Number(el.dataset.r),Number(el.dataset.anchor))});
   app.querySelectorAll<HTMLElement>('[data-inspect-tile]').forEach(el=>el.onclick=event=>{event.stopPropagation();inspectedTile=Number(el.dataset.inspectTile);renderBattle(game!.state)});
-  app.querySelector<HTMLElement>('[data-open-chronicle]')?.addEventListener('click',()=>{chronicleOpen=true;renderBattle(game!.state)});
-  app.querySelector<HTMLElement>('[data-close-chronicle]')?.addEventListener('click',()=>{chronicleOpen=false;renderBattle(game!.state)});
+  app.querySelectorAll<HTMLElement>('[data-open-chronicle]').forEach(el=>el.onclick=event=>{event.stopPropagation();chronicleOpen=true;renderBattle(game!.state)});
+  app.querySelectorAll<HTMLElement>('[data-close-chronicle]').forEach(el=>el.onclick=event=>{event.stopPropagation();chronicleOpen=false;renderBattle(game!.state)});
   app.querySelectorAll<HTMLElement>('[data-inspect-leader]').forEach(el=>el.onclick=event=>{if((event.target as HTMLElement).closest('[data-open-pile]'))return;inspectedLeader=el.dataset.inspectLeader as Side;renderBattle(game!.state)});
   app.querySelectorAll<HTMLElement>('[data-open-pile]').forEach(el=>el.onclick=event=>{event.stopPropagation();pileView={side:el.dataset.openPile as Side,selectedUid:null};renderBattle(game!.state)});
   app.querySelectorAll<HTMLElement>('[data-inspect-zone]').forEach(el=>el.onclick=()=>{inspectedZone=el.dataset.inspectZone as Side;inspectedUnit=null;inspectedBattleCardUid=null;renderBattle(game!.state)});
